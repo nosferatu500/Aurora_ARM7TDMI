@@ -1,0 +1,6 @@
+[package]
+name = "GBA"
+version = "0.1.0"
+authors = ["Vitaly Shvetsov <nosferatu2995@mail.ru>"]
+
+[dependencies]
