@@ -1,41 +1,56 @@
 use interconnect::Interconnect;
 
 struct StatusRegister {
-    pub Z: bool,
-    pub C: bool,
-    pub N: bool,
-    pub V: bool,
+    pub N: bool, // 31 // Negative result from ALU flag.
+    pub Z: bool, // 30 // Zero result from ALU flag.
+    pub C: bool, // 29 // ALU operation carried out.
+    pub V: bool, // 28 // ALU operation overflowed
+
+    pub M: [u8; 4], // 4-0 // Define the processor mode.
+
+    pub I: bool, // 7 // Disable the IRQ.
+    pub F: bool, // 6 // Disable the FIQ.
+
+    pub T: bool, // 5 // Architecture the CPU. // 0 - ARM, 1 - THUMB.
 }
 
 impl StatusRegister {
     pub fn new() -> StatusRegister {
         StatusRegister {
+            N: false,
             Z: false,
             C: false,
-            N: false,
             V: false,
+
+            M: [0; 4],
+
+            I: true,
+            F: true,
+
+            T: true,
         }
     }
 }
 
 pub struct Cpu {
-    pc: u32,
+    pc: u32, // r15 // program counter
     regs: [u32; 16],
 
     current_pc: u32,
 
     interconnect: Interconnect,
 
-    sp: u32,
+    sp: u32, // r13 // stack pointer
 
-    lr: u32,
+    lr: u32, // r14 // link register
 
-    cpsr: StatusRegister,
+    cpsr: StatusRegister, // Current program status register.
+    spsr: StatusRegister, // Saved program status register. // Only for privileged mode.
 }
 
 impl Cpu {
     pub fn new(interconnect: Interconnect) -> Cpu {
-        let pc = 15;
+        let pc = 0;
         Cpu {
             pc,
             regs: [0xdeadbeef; 16],
@@ -49,6 +64,7 @@ impl Cpu {
             lr: 0,
 
             cpsr: StatusRegister::new(),
+            spsr: StatusRegister::new(),
         }
     }
 
@@ -72,12 +88,21 @@ impl Cpu {
 
         self.current_pc = pc;
 
-        if instruction & 1 == CpuMode::THUMB as u32 {
-            self.pc = pc.wrapping_add(2);
-            self.decode16(instruction as u16);
-        } else {
+        match instruction >> 5 & 1 {
+          0b0 => {
             self.pc = pc.wrapping_add(4);
             self.decode32(instruction);
+
+            self.cpsr.T = false;
+          },
+
+          0b1 => {
+            self.pc = pc.wrapping_add(2);
+            self.decode16(instruction as u16);
+
+            self.cpsr.T = true;
+          },
+          _ => unreachable!(),
         }
     }
 
@@ -659,6 +684,11 @@ impl Cpu {
 }
 
 enum CpuMode {
-    THUMB = 1,
-    ARM = 0,
+  User,
+  FIQ,
+  IRQ,
+  Supervisor,
+  Abort,
+  Undef,
+  System,
 }
