@@ -1,12 +1,13 @@
 use interconnect::Interconnect;
 
+#[derive(Clone, Copy)]
 struct StatusRegister {
     pub N: bool, // 31 // Negative result from ALU flag.
     pub Z: bool, // 30 // Zero result from ALU flag.
     pub C: bool, // 29 // ALU operation carried out.
     pub V: bool, // 28 // ALU operation overflowed
 
-    pub M: [u8; 4], // 4-0 // Define the processor mode.
+    pub M: u8, // 4-0 // Define the processor mode.
 
     pub I: bool, // 7 // Disable the IRQ.
     pub F: bool, // 6 // Disable the FIQ.
@@ -22,12 +23,12 @@ impl StatusRegister {
             C: false,
             V: false,
 
-            M: [0; 4],
+            M: 0b10011,
 
             I: true,
             F: true,
 
-            T: true,
+            T: false,
         }
     }
 }
@@ -41,11 +42,36 @@ pub struct Cpu {
     interconnect: Interconnect,
 
     sp: u32, // r13 // stack pointer
-
     lr: u32, // r14 // link register
 
     cpsr: StatusRegister, // Current program status register.
     spsr: StatusRegister, // Saved program status register. // Only for privileged mode.
+
+    r8_fiq: u32,
+    r9_fiq: u32,
+    r10_fiq: u32,
+    r11_fiq: u32,
+    r12_fiq: u32,
+
+    sp_fiq: u32,
+    lr_fiq: u32,
+    spsr_fiq: StatusRegister,
+
+    sp_svc: u32,
+    lr_svc: u32,
+    spsr_svc: StatusRegister,
+
+    sp_abt: u32,
+    lr_abt: u32,
+    spsr_abt: StatusRegister,
+
+    sp_irq: u32,
+    lr_irq: u32,
+    spsr_irq: StatusRegister,
+
+    sp_und: u32,
+    lr_und: u32,
+    spsr_und: StatusRegister,
 }
 
 impl Cpu {
@@ -65,12 +91,57 @@ impl Cpu {
 
             cpsr: StatusRegister::new(),
             spsr: StatusRegister::new(),
+
+            r8_fiq: 0,
+            r9_fiq: 0,
+            r10_fiq: 0,
+            r11_fiq: 0,
+            r12_fiq: 0,
+
+            sp_fiq: 0,
+            lr_fiq: 0,
+            spsr_fiq: StatusRegister::new(),
+
+            sp_svc: 0,
+            lr_svc: 0,
+            spsr_svc: StatusRegister::new(),
+
+            sp_abt: 0,
+            lr_abt: 0,
+            spsr_abt: StatusRegister::new(),
+
+            sp_irq: 0,
+            lr_irq: 0,
+            spsr_irq: StatusRegister::new(),
+
+            sp_und: 0,
+            lr_und: 0,
+            spsr_und: StatusRegister::new(),
         }
     }
 
     pub fn reset(&mut self) {
+      self.lr_svc = self.pc;
+      self.pc = 0;
+
+      self.spsr_svc = self.cpsr;
+      self.cpsr = StatusRegister::new();
+
+      let sp = 13 as usize;
+      let lr = 14 as usize;
       let pc = 15 as usize;
+
+      self.regs[sp] = 0;
+      self.regs[lr] = 0;
       self.regs[pc] = 0;
+
+      self.cpsr.T = false;
+
+      self.cpsr.I = true;
+      self.cpsr.F = true;
+
+      self.cpsr.M = 0b10011;
+      
     }
 
     fn set_reg(&mut self, index: u32, value: u32) {
@@ -684,11 +755,22 @@ impl Cpu {
 }
 
 enum CpuMode {
-  User,
-  FIQ,
-  IRQ,
-  Supervisor,
-  Abort,
-  Undef,
-  System,
+  User = 0b10000,
+  FIQ = 0b10001,
+  IRQ = 0b10010,
+  Supervisor = 0b10011,
+  Abort = 0b10111,
+  Undef = 0b11011,
+  System = 0b11111,
+}
+
+enum ExceptionVectors {
+  Reset = 0x00000000,                 // Supervisor.
+  Undefined_instruction = 0x00000004, // Undef.
+  Software_interupt = 0x00000008,     // Supervisor.
+  Abort_prefitch = 0x0000000C,        // Abort.
+  Abort_data = 0x00000010,            // Abort.
+  Reserved = 0x00000014,              // Reserved.
+  IRQ = 0x00000018,                   // IRQ.
+  FIQ = 0x0000001C,                   // FIQ.
 }
