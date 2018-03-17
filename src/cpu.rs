@@ -54,7 +54,7 @@ impl Cpu {
 
     pub fn reset(&mut self) {
       let pc = 15 as usize;
-      self.regs[pc] = 0xdeadbeef;
+      self.regs[pc] = 0;
     }
 
     fn set_reg(&mut self, index: u32, value: u32) {
@@ -69,6 +69,8 @@ impl Cpu {
         let pc = self.pc;
 
         let instruction = self.interconnect.load32(self.pc);
+
+        self.current_pc = pc;
 
         if instruction & 1 == CpuMode::THUMB as u32 {
             self.pc = pc.wrapping_add(2);
@@ -423,6 +425,119 @@ impl Cpu {
             }
 
             return;
+        } else if instruction >> 12 & 0xf == 0b1100 {
+            // Format XV
+            let opcode = instruction >> 11 & 0b1;
+
+            let rb = instruction >> 8 & 0b111;
+
+            let rlist = instruction & 0xff;
+
+            match opcode {
+                0 => {
+                    println!("Unimplemented STMIA logic");
+                    self.sp -= 1;
+                }
+                1 => {
+                    println!("Unimplemented LDMIA logic");
+                    self.sp += 1;
+                }
+                _ => unreachable!(),
+            }
+
+            return;
+        } else if instruction >> 12 & 0xf == 0b1101 {
+            // Format XVI
+            let opcode = instruction >> 8 & 0xf;
+
+            match opcode {
+                0x0 => {
+                    self.cpsr.Z = true;
+                }
+                0x1 => {
+                    self.cpsr.Z = false;
+                }
+                0x2 => {
+                    self.cpsr.C = true;
+                }
+                0x3 => {
+                    self.cpsr.C = false;
+                }
+                0x4 => {
+                    self.cpsr.N = true;
+                }
+                0x5 => {
+                    self.cpsr.N = false;
+                }
+                0x6 => {
+                    self.cpsr.V = true;
+                }
+                0x7 => {
+                    self.cpsr.V = false;
+                }
+                0x8 => {
+                    self.cpsr.C = true;
+                    self.cpsr.Z = false;
+                }
+                0x9 => {
+                    self.cpsr.C = false;
+                    self.cpsr.Z = true;
+                }
+                0xA => {
+                    self.cpsr.N = self.cpsr.V;
+                }
+                0xB => {
+                    self.cpsr.N = !self.cpsr.V;
+                }
+                0xC => {
+                    self.cpsr.Z = false;
+                    self.cpsr.N = self.cpsr.V;
+                }
+                0xD => {
+                    self.cpsr.Z = true;
+                    self.cpsr.N = !self.cpsr.V;
+                }
+                0xE => {
+                    unreachable!();
+                }
+                0xF => {
+                    println!("Unimplemented SWI instruction");
+                    unimplemented!();
+                }
+                _ => unreachable!(),
+            }
+
+            let check_point = instruction >> 9 & 0b11;
+
+            if check_point != 0b10 {
+                panic!("Incorrect instruction type {:b}", check_point);
+            }
+
+            let lr = instruction >> 8 & 0b1;
+
+            match lr {
+                0 => (),
+                1 => println!("Unimplemented PUSH/PULL logic"),
+                _ => unreachable!(),
+            }
+
+            return;
+        } else if instruction >> 11 & 0x1f == 0b11100 {
+            // Format XVIII
+            let nn = instruction & 0x7ff;
+
+            self.pc = (nn as i32) as u32;
+
+            return;
+        } else if instruction >> 11 & 0x1f == 0x1f {
+            // Format XIX Part: II
+            let opcode = instruction >> 11 & 0x1f;
+
+            let nn = instruction & 0x7ff;
+
+            self.pc = self.current_pc.wrapping_add(4).wrapping_sub(0x400000).wrapping_add(0x3FFFFF);
+
+            return;
         }
 
         panic!("Unknown instruction 16bit: {:016b}", instruction)
@@ -447,7 +562,7 @@ impl Cpu {
     fn op_sub(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = rn - operand2;
+        let res = rn.wrapping_sub(operand2);
 
         self.set_reg(rd, res);
     }
@@ -455,7 +570,7 @@ impl Cpu {
     fn op_rsb(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = operand2 - rn;
+        let res = operand2.wrapping_sub(rn);
 
         self.set_reg(rd, res);
     }
@@ -463,7 +578,7 @@ impl Cpu {
     fn op_add(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = rn + operand2;
+        let res = rn.wrapping_add(operand2);
 
         self.set_reg(rd, res);
     }
@@ -471,7 +586,7 @@ impl Cpu {
     fn op_adc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = rn + operand2 + self.cpsr.C as u32;
+        let res = rn.wrapping_add(operand2).wrapping_add(self.cpsr.C as u32);
 
         self.set_reg(rd, res);
     }
@@ -479,7 +594,7 @@ impl Cpu {
     fn op_sbc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = rn - operand2 + self.cpsr.C as u32 - 1;
+        let res = rn.wrapping_sub(operand2).wrapping_add(self.cpsr.C as u32).wrapping_sub(1);
 
         self.set_reg(rd, res);
     }
@@ -487,7 +602,7 @@ impl Cpu {
     fn op_rsc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = operand2 - rn + self.cpsr.C as u32 - 1;
+        let res = operand2.wrapping_sub(rn).wrapping_add(self.cpsr.C as u32).wrapping_sub(1);
 
         self.set_reg(rd, res);
     }
@@ -505,13 +620,13 @@ impl Cpu {
     }
 
     fn op_cmp(&mut self, rn: u32, operand2: u32) {
-        let res = rn - operand2;
+        let res = rn.wrapping_sub(operand2);
         self.cpsr.N = (res >> 31 & 0b1) == 1;
         self.cpsr.Z = (res >> 30 & 0b1) == 1;
     }
 
     fn op_cmn(&mut self, rn: u32, operand2: u32) {
-        let res = rn + operand2;
+        let res = rn.wrapping_add(operand2);
         self.cpsr.N = (res >> 31 & 0b1) == 1;
         self.cpsr.Z = (res >> 30 & 0b1) == 1;
     }
