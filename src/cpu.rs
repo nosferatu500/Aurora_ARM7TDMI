@@ -301,7 +301,48 @@ impl Cpu {
     }
 
     fn data_processing(&mut self, instruction: u32) {
+      let opcode = (instruction >> 25) & 0b1111;
 
+        let i = instruction >> 26 & 0b1;
+        let s = instruction >> 21 & 0b1;
+
+        let rn = instruction >> 20 & 0b1111;
+        let rd = instruction >> 16 & 0b1111;
+
+        // Operand 2 section:
+        // IF i == 0
+        let shift = instruction >> 4 & 0xff;
+        let rm = instruction & 0b1111;
+
+        // IF i == 1
+        let rotate = instruction >> 8 & 0b1111;
+        let imm = instruction & 0xff;
+
+        let operand2 = match i {
+            0 => self.get_operand2_shift(shift, rm),
+            1 => self.get_operand2_rotate(rotate, imm),
+            _ => panic!("Unexpected operand"),
+        };
+      
+      match opcode {
+            0b0000 => self.op_and(rd, rn, operand2),
+            0b0001 => self.op_eor(rd, rn, operand2),
+            0b0010 => self.op_sub(rd, rn, operand2),
+            0b0011 => self.op_rsb(rd, rn, operand2),
+            0b0100 => self.op_add(rd, rn, operand2),
+            0b0101 => self.op_adc(rd, rn, operand2),
+            0b0110 => self.op_sbc(rd, rn, operand2),
+            0b0111 => self.op_rsc(rd, rn, operand2),
+            0b1000 => self.op_tst(rn, operand2),
+            0b1001 => self.op_teq(rn, operand2),
+            0b1010 => self.op_cmp(rn, operand2),
+            0b1011 => self.op_cmn(rn, operand2),
+            0b1100 => self.op_orr(rd, rn, operand2),
+            0b1101 => self.op_mov(rd, operand2),
+            0b1110 => self.op_bic(rd, rn, operand2),
+            0b1111 => self.op_mvn(rd, operand2),
+            _ => panic!("\n\nUnknown opcode {:04b}\n\n", opcode),
+        }
     }
 
     fn multiply(&mut self, instruction: u32) {
@@ -316,8 +357,15 @@ impl Cpu {
       
     }
 
+    //TODO: Probably incomplete.
     fn branch_and_exchange(&mut self, instruction: u32) {
-      
+      let rn = instruction & 0xf;
+      self.pc = self.get_reg(rn);
+      if instruction & 0b1 == 0 {
+        self.cpsr.T = false;
+      } else {
+        self.cpsr.T = true;
+      }
     }
 
     fn halfword_data_transfer_register(&mut self, instruction: u32) {
@@ -341,7 +389,17 @@ impl Cpu {
     }
 
     fn branch(&mut self, instruction: u32) {
-      
+      let l = instruction >> 24 & 0b1;
+      let offset = instruction & 0b11111111111111111111111;
+
+      if l == 0b0 {
+        self.pc = ((offset << 2) as i32) as u32;
+      } else if l == 0b1 {
+        self.lr = self.pc;
+      } else {
+        unreachable!();
+      }
+
     }
 
     fn coprocessor_data_transfer(&mut self, instruction: u32) {
@@ -362,28 +420,6 @@ impl Cpu {
 
     fn decode32(&mut self, instruction: u32) {
         let condition = instruction >> 28;
-        let opcode = (instruction >> 25) & 0b1111;
-
-        let i = instruction >> 26 & 0b1;
-        let s = instruction >> 21 & 0b1;
-
-        let rn = instruction >> 20 & 0b1111;
-        let rd = instruction >> 16 & 0b1111;
-
-        // Operand 2 section:
-        // IF i == 0
-        let shift = instruction >> 4 & 0xff;
-        let rm = instruction & 0b1111;
-
-        // IF i == 1
-        let rotate = instruction >> 8 & 0b1111;
-        let imm = instruction & 0xff;
-
-        let operand2 = match i {
-            0 => self.get_operand2_shift(shift, rm),
-            1 => self.get_operand2_rotate(rotate, imm),
-            _ => panic!("Unexpected operand"),
-        };
 
         println!("Instruction: {:032b} \t {:#x}", instruction, instruction);
 
@@ -409,26 +445,6 @@ impl Cpu {
             ArmInstructionFormat::Cop_DataOperation => self.coprocessor_data_operation(instruction),
             ArmInstructionFormat::Cop_RegisterTransfer => self.coprocessor_register_transfer(instruction),
             ArmInstructionFormat::SoftwareInterupt => self.software_interupt(instruction),
-        }
-
-        match opcode {
-            0b0000 => self.op_and(rd, rn, operand2),
-            0b0001 => self.op_eor(rd, rn, operand2),
-            0b0010 => self.op_sub(rd, rn, operand2),
-            0b0011 => self.op_rsb(rd, rn, operand2),
-            0b0100 => self.op_add(rd, rn, operand2),
-            0b0101 => self.op_adc(rd, rn, operand2),
-            0b0110 => self.op_sbc(rd, rn, operand2),
-            0b0111 => self.op_rsc(rd, rn, operand2),
-            0b1000 => self.op_tst(rn, operand2),
-            0b1001 => self.op_teq(rn, operand2),
-            0b1010 => self.op_cmp(rn, operand2),
-            0b1011 => self.op_cmn(rn, operand2),
-            0b1100 => self.op_orr(rd, rn, operand2),
-            0b1101 => self.op_mov(rd, operand2),
-            0b1110 => self.op_bic(rd, rn, operand2),
-            0b1111 => self.op_mvn(rd, operand2),
-            _ => panic!("\n\nUnknown opcode {:04b}\n\n", opcode),
         }
     }
 
