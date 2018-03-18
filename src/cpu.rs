@@ -346,15 +346,15 @@ impl Cpu {
     }
 
     fn multiply(&mut self, instruction: u32) {
-      
+      panic!("multiply unimplemented yet.");
     }
 
     fn multiply_long(&mut self, instruction: u32) {
-      
+      panic!("multiply_long unimplemented yet.");
     }
 
     fn single_data_swap(&mut self, instruction: u32) {
-      
+      panic!("single_data_swap unimplemented yet.");
     }
 
     //TODO: Probably incomplete.
@@ -369,23 +369,23 @@ impl Cpu {
     }
 
     fn halfword_data_transfer_register(&mut self, instruction: u32) {
-      
+      panic!("halfword_data_transfer_register unimplemented yet.");
     }
 
     fn halfword_data_transfer_imm(&mut self, instruction: u32) {
-      
+      panic!("halfword_data_transfer_imm unimplemented yet.");
     }
 
     fn single_data_transfer(&mut self, instruction: u32) {
-      
+      panic!("single_data_transfer unimplemented yet.");
     }
 
     fn undefined(&mut self, instruction: u32) {
-      
+      panic!("undefined unimplemented yet.");
     }
 
     fn block_data_transfer(&mut self, instruction: u32) {
-      
+      panic!("block_data_transfer unimplemented yet.");
     }
 
     fn branch(&mut self, instruction: u32) {
@@ -403,19 +403,19 @@ impl Cpu {
     }
 
     fn coprocessor_data_transfer(&mut self, instruction: u32) {
-      
+      panic!("coprocessor_data_transfer unimplemented yet.");
     }
 
     fn coprocessor_data_operation(&mut self, instruction: u32) {
-      
+      panic!("coprocessor_data_operation unimplemented yet.");
     }
 
     fn coprocessor_register_transfer(&mut self, instruction: u32) {
-      
+      panic!("coprocessor_register_transfer unimplemented yet.");
     }
 
     fn software_interupt(&mut self, instruction: u32) {
-      
+      panic!("software_interupt unimplemented yet.");
     }
 
     fn decode32(&mut self, instruction: u32) {
