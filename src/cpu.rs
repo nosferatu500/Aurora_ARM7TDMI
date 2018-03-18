@@ -236,6 +236,270 @@ impl Cpu {
         }
     }
 
+    fn detect_thumb_instruction_format(&self, instruction: u16) -> ThumbInstructionFormat {
+      if instruction >> 12 & 0xf == 0b1111 {
+        return ThumbInstructionFormat::Long_branch_with_link;
+      }
+
+      if instruction >> 11 & 0x1f == 0b11100 {
+        return ThumbInstructionFormat::Unconditional_branch;
+      }
+
+      if instruction >> 8 & 0xff == 0b11011111 {
+        return ThumbInstructionFormat::Software_Interrupt;
+      }
+
+      if instruction >> 12 & 0xf == 0b1101 {
+        return ThumbInstructionFormat::Conditional_branch;
+      }
+
+      if instruction >> 12 & 0xf == 0b1100 {
+        return ThumbInstructionFormat::Multiply_load_store;
+      }
+
+      if instruction >> 12 & 0xf == 0b1011 && instruction >> 9 & 0b11 == 0b10 {
+        return ThumbInstructionFormat::Push_Pop_registers;
+      }
+
+      if instruction >> 8 & 0xff == 0b10110000 {
+        return ThumbInstructionFormat::Add_offset_to_stack_pointer;
+      }
+
+      if instruction >> 12 & 0xf == 0b1010 {
+        return ThumbInstructionFormat::Load_address;
+      }
+
+      if instruction >> 12 & 0xf == 0b1001 {
+        return ThumbInstructionFormat::SP_relative_load_store;
+      }
+
+      if instruction >> 12 & 0xf == 0b1000 {
+        return ThumbInstructionFormat::Load_Store_halfword;
+      }
+
+      if instruction >> 13 & 0b111 == 0b011 {
+        return ThumbInstructionFormat::Load_Store_with_Imm_Offset;
+      }
+
+      if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b1 {
+        return ThumbInstructionFormat::Load_Store_Sign_Extended_byte_halfword;
+      }
+
+      if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b0 {
+        return ThumbInstructionFormat::Load_Store_with_Register_Offset;
+      }
+
+      if instruction >> 11 & 0x1f == 0b01001 {
+        return ThumbInstructionFormat::PC_relative_load;
+      }
+
+      if instruction >> 10 & 0x3f == 0b010001 {
+        return ThumbInstructionFormat::HIRegisterOperations_BranchExchange;
+      }
+
+      if instruction >> 10 & 0x3f == 0b010000 {
+        return ThumbInstructionFormat::AluOperations;
+      }
+
+      if instruction >> 13 & 0b111 == 0b001 {
+        return ThumbInstructionFormat::Move_Compare_Add_Substract_Imm;
+      }
+
+      if instruction >> 11 & 0x1f == 0b00011 {
+        return ThumbInstructionFormat::Add_Substract;
+      }
+
+      if instruction >> 13 & 0b111 == 0b000 {
+        return ThumbInstructionFormat::MoveShiftedRegister;
+      }
+
+      return unreachable!();
+    }
+
+    fn move_shifted_register(&mut self, instruction: u16) {
+        let opcode = instruction >> 11 & 0b11;
+
+        let offset = instruction >> 6 & 0x1f;
+
+        let rs = instruction >> 3 & 0b111;
+
+        let rd = instruction & 0b111;
+
+        match opcode {
+            0b00 => {
+                let res = self.get_reg(rs as u32) << offset;
+                self.set_reg(rd as u32, res);
+            }
+            0b01 => {
+                let res = self.get_reg(rs as u32) >> offset;
+                self.set_reg(rd as u32, res);
+            }
+            0b10 => {
+                let res = (self.get_reg(rs as u32) as i32) >> offset;
+                self.set_reg(rd as u32, res as u32);
+            }
+            0b11 => unreachable!(),
+            
+            _ => unreachable!(),
+        }
+    }
+
+    fn add_substract(&mut self, instruction: u16) {
+      let opcode = instruction >> 9 & 0b1;
+
+      let rn = instruction >> 6 & 0b111;
+
+      let rs = instruction >> 3 & 0b111;
+
+      let rd = instruction & 0b111;
+
+      match opcode {
+          0b00 => {
+              let res = self.get_reg(rs as u32).wrapping_add(self.get_reg(rn as u32));
+              self.set_reg(rd as u32, res);
+          }
+          0b01 => {
+              let res = self.get_reg(rs as u32).wrapping_add(self.get_reg(rn as u32));
+              self.set_reg(rd as u32, res);
+          }
+          0b10 => {
+              let res = self.get_reg(rs as u32).wrapping_sub(rn as u32);
+              self.set_reg(rd as u32, res);
+          }
+          0b11 => {
+              let res = self.get_reg(rs as u32).wrapping_sub(rn as u32);
+              self.set_reg(rd as u32, res);
+          }
+          _ => unreachable!(),
+      }
+    }
+    
+    fn move_compare_add_substract_imm(&mut self, instruction: u16) {
+      panic!("Move_Compare_Add_Substract_Imm unimplemented yet.");
+    }
+    
+    fn alu_operations(&mut self, instruction: u16) {
+      panic!("AluOperations unimplemented yet.");
+    }
+    
+    fn hi_register_operations_branch_exchange(&mut self, instruction: u16) {
+      panic!("HIRegisterOperations_BranchExchange unimplemented yet.");
+    }
+    
+    fn pc_relative_load(&mut self, instruction: u16) {
+      panic!("PC_relative_load unimplemented yet.");
+    }
+    
+    fn load_store_with_register_offset(&mut self, instruction: u16) {
+      let ro = instruction >> 6 & 0b111;
+      let rb = instruction >> 3 & 0b111;
+      let rd = instruction & 0b111;
+
+      let b = instruction >> 10 & 0b1;
+      let l = instruction >> 11 & 0b1;
+
+      if l == 0b0 && b == 0b0 {
+        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
+        let value = self.get_reg(rd as u32);
+        self.interconnect.store32(address, value);
+      }
+
+      if l == 0b0 && b == 0b1 {
+        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
+        let value = self.get_reg(rd as u32) as u8;
+        self.interconnect.store8(address, value);
+      }
+
+      if l == 0b1 && b == 0b0 {
+        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
+        let res = self.interconnect.load32(address);
+        self.set_reg(rd as u32, res);
+      }
+
+      if l == 0b1 && b == 0b1 {
+        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
+        let res = self.interconnect.load8(addr);
+        self.set_reg(rd as u32, res as u32);
+      }
+    }
+    
+    fn load_store_sign_extended_byte_halfword(&mut self, instruction: u16) {
+      let h = instruction >> 11 & 0b1;
+      let s = instruction >> 10 & 0b1;
+
+      let ro = instruction >> 6 & 0b111;
+      let rb = instruction >> 3 & 0b111;
+      let rd = instruction & 0b111;
+
+      if s == 0b0 && h == 0b0 {
+        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
+        let value = self.get_reg(rd as u32) as u16;
+        self.interconnect.store16(address, value);
+      }
+
+      if s == 0b0 && h == 0b1 {
+        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
+        let res = self.interconnect.load8(addr);
+        self.set_reg(rd as u32, res as u32);
+      }
+
+      if s == 0b1 && h == 0b0 {
+        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
+        let res = self.interconnect.load16(addr) as i32;
+        self.set_reg(rd as u32, res as u32);
+      }
+
+      if s == 0b1 && h == 0b1 {
+        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32)) ;
+        let res = self.interconnect.load16(addr) as i32;
+        self.set_reg(rd as u32, res as u32);
+      }
+    }
+    
+    fn load_store_with_imm_offset(&mut self, instruction: u16) {
+      panic!("Load_Store_with_Imm_Offset unimplemented yet.");
+    }
+    
+    fn load_store_halfword(&mut self, instruction: u16) {
+      panic!("Load_Store_halfword unimplemented yet.");
+    }
+    
+    fn sp_relative_load_store(&mut self, instruction: u16) {
+      panic!("SP_relative_load_store unimplemented yet.");
+    }
+    
+    fn load_address(&mut self, instruction: u16) {
+      panic!("Load_address unimplemented yet.");
+    }
+    
+    fn add_offset_to_stack_pointer(&mut self, instruction: u16) {
+      panic!("Add_offset_to_stack_pointer unimplemented yet.");
+    }
+    
+    fn push_pop_registers(&mut self, instruction: u16) {
+      panic!("Push_Pop_registers unimplemented yet.");
+    }
+    
+    fn multiply_load_store(&mut self, instruction: u16) {
+      panic!("Multiply_load_store unimplemented yet.");
+    }
+    
+    fn conditional_branch(&mut self, instruction: u16) {
+      panic!("Conditional_branch unimplemented yet.");
+    }
+    
+    fn software_interrupt(&mut self, instruction: u16) {
+      panic!("Software_Interrupt unimplemented yet.");
+    }
+    
+    fn unconditional_branch(&mut self, instruction: u16) {
+      panic!("Unconditional_branch unimplemented yet.");
+    }
+    
+    fn long_branch_with_link(&mut self, instruction: u16) {
+      panic!("Long_branch_with_link unimplemented yet.");
+    }
+
     fn detect_arm_instruction_format(&self, instruction: u32) -> ArmInstructionFormat {
       if instruction >> 24 & 0xf == 0b1111 {
         return ArmInstructionFormat::SoftwareInterupt;
@@ -385,6 +649,17 @@ impl Cpu {
     }
 
     fn block_data_transfer(&mut self, instruction: u32) {
+      let rlist = instruction & 0b111111111111111;
+      let rn = instruction >> 16 & 0xf;
+      let l = instruction >> 20 & 0b1;
+      let w = instruction >> 21 & 0b1;
+      let s = instruction >> 22 & 0b1;
+      let u = instruction >> 23 & 0b1;
+      let p = instruction >> 24 & 0b1;
+
+
+
+
       panic!("block_data_transfer unimplemented yet.");
     }
 
@@ -449,129 +724,33 @@ impl Cpu {
     }
 
     fn decode16(&mut self, instruction: u16) {
-        let thumb_format = instruction >> 13;
-
         println!("Instruction: {:016b} \t {:#x}", instruction, instruction);
 
-        // Format I & II
-        if thumb_format == 0b000 {
-            let opcode = instruction >> 11 & 0b11;
+        let format = self.detect_thumb_instruction_format(instruction);
 
-            let offset = instruction >> 6 & 0x1f;
+        match format {
+            ThumbInstructionFormat::MoveShiftedRegister => self.move_shifted_register(instruction),
+            ThumbInstructionFormat::Add_Substract => self.add_substract(instruction),
+            ThumbInstructionFormat::Move_Compare_Add_Substract_Imm => self.move_compare_add_substract_imm(instruction),
+            ThumbInstructionFormat::AluOperations => self.alu_operations(instruction),
+            ThumbInstructionFormat::HIRegisterOperations_BranchExchange => self.hi_register_operations_branch_exchange(instruction),
+            ThumbInstructionFormat::PC_relative_load => self.pc_relative_load(instruction),
+            ThumbInstructionFormat::Load_Store_with_Register_Offset => self.load_store_with_register_offset(instruction),
+            ThumbInstructionFormat::Load_Store_Sign_Extended_byte_halfword => self.load_store_sign_extended_byte_halfword(instruction),
+            ThumbInstructionFormat::Load_Store_with_Imm_Offset => self.load_store_with_imm_offset(instruction),
+            ThumbInstructionFormat::Load_Store_halfword => self.load_store_halfword(instruction),
+            ThumbInstructionFormat::SP_relative_load_store => self.sp_relative_load_store(instruction),
+            ThumbInstructionFormat::Load_address => self.load_address(instruction),
+            ThumbInstructionFormat::Add_offset_to_stack_pointer => self.add_offset_to_stack_pointer(instruction),
+            ThumbInstructionFormat::Push_Pop_registers => self.push_pop_registers(instruction),
+            ThumbInstructionFormat::Multiply_load_store => self.multiply_load_store(instruction),
+            ThumbInstructionFormat::Conditional_branch => self.conditional_branch(instruction),
+            ThumbInstructionFormat::Software_Interrupt => self.software_interrupt(instruction),
+            ThumbInstructionFormat::Unconditional_branch => self.unconditional_branch(instruction),
+            ThumbInstructionFormat::Long_branch_with_link => self.long_branch_with_link(instruction),
+        }
 
-            let rs = instruction >> 3 & 0b111;
-
-            let rd = instruction & 0b11;
-
-            match opcode {
-                0b00 => {
-                    let res = self.get_reg(rs as u32) << offset;
-                    self.set_reg(rd as u32, res);
-                }
-                0b01 => {
-                    let res = self.get_reg(rs as u32) >> offset;
-                    self.set_reg(rd as u32, res);
-                }
-                0b10 => {
-                    let res = (self.get_reg(rs as u32) as i32) >> offset;
-                    self.set_reg(rd as u32, res as u32);
-                }
-                0b11 => {
-                    let opcode = instruction >> 9 & 0b11;
-
-                    let rn = instruction >> 6 & 0b111;
-
-                    match opcode {
-                        0b00 => {
-                            let res = self.get_reg(rs as u32) + self.get_reg(rn as u32);
-                            self.set_reg(rd as u32, res);
-                        }
-                        0b01 => {
-                            let res = self.get_reg(rs as u32) - self.get_reg(rn as u32);
-                            self.set_reg(rd as u32, res);
-                        }
-                        0b10 => {
-                            let res = self.get_reg(rs as u32) + rn as u32;
-                            self.set_reg(rd as u32, res);
-                        }
-                        0b11 => {
-                            let res = self.get_reg(rs as u32) - rn as u32;
-                            self.set_reg(rd as u32, res);
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-                _ => unreachable!(),
-            }
-
-            return;
-        } else if instruction >> 12 & 0b1111 == 0b0101 && instruction >> 9 & 0b1 == 0 {
-            // Format VII
-            let opcode = instruction >> 10 & 0b11;
-
-            let ro = instruction >> 6 & 0b111;
-            let rb = instruction >> 3 & 0b111;
-            let rd = instruction & 0b11;
-
-            match opcode {
-                0b00 => {
-                    let address = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let value = self.get_reg(rd as u32);
-                    self.interconnect.store32(address, value);
-                }
-                0b01 => {
-                    let address = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let value = self.get_reg(rd as u32) as u8;
-                    self.interconnect.store8(address, value);
-                }
-                0b10 => {
-                    let address = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let res = self.interconnect.load32(address);
-
-                    self.set_reg(rd as u32, res);
-                }
-                0b11 => {
-                    let addr = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let res = self.interconnect.load8(addr);
-                    self.set_reg(rd as u32, res as u32);
-                }
-                _ => unreachable!(),
-            }
-
-            return;
-        } else if instruction >> 12 & 0b1111 == 0b0101 && instruction >> 9 & 0b1 == 1 {
-            // Format VIII
-            let opcode = instruction >> 10 & 0b11;
-
-            let ro = instruction >> 6 & 0b111;
-            let rb = instruction >> 3 & 0b111;
-            let rd = instruction & 0b11;
-
-            match opcode {
-                0b00 => {
-                    let address = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let value = self.get_reg(rd as u32) as u16;
-                    self.interconnect.store16(address, value);
-                }
-                0b01 => {
-                    let addr = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let res = self.interconnect.load8(addr);
-                    self.set_reg(rd as u32, res as u32);
-                }
-                0b10 => {
-                    let addr = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let res = self.interconnect.load16(addr) as i32;
-                    self.set_reg(rd as u32, res as u32);
-                }
-                0b11 => {
-                    let addr = self.get_reg(rb as u32) + self.get_reg(ro as u32);
-                    let res = self.interconnect.load16(addr) as i32;
-                    self.set_reg(rd as u32, res as u32);
-                }
-                _ => unreachable!(),
-            }
-            return;
-        } else if instruction >> 13 & 0b111 == 0b001 {
+          if instruction >> 13 & 0b111 == 0b001 {
             // Format III
             let opcode = instruction >> 11 & 0b11;
 
@@ -945,4 +1124,26 @@ enum ArmInstructionFormat {
   Cop_DataOperation,
   Cop_RegisterTransfer,
   SoftwareInterupt,
+}
+
+enum ThumbInstructionFormat {
+  MoveShiftedRegister,
+  Add_Substract,
+  Move_Compare_Add_Substract_Imm,
+  AluOperations,
+  HIRegisterOperations_BranchExchange,
+  PC_relative_load,
+  Load_Store_with_Register_Offset,
+  Load_Store_Sign_Extended_byte_halfword,
+  Load_Store_with_Imm_Offset,
+  Load_Store_halfword,
+  SP_relative_load_store,
+  Load_address,
+  Add_offset_to_stack_pointer,
+  Push_Pop_registers,
+  Multiply_load_store,
+  Conditional_branch,
+  Software_Interrupt,
+  Unconditional_branch,
+  Long_branch_with_link,
 }
