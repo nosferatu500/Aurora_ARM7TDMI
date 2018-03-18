@@ -214,6 +214,152 @@ impl Cpu {
         imm.rotate_right(rotate * 2)
     }
 
+    fn get_condition_field_result(&self, condition: u32) -> bool {
+      match condition {
+            0b0000 => return self.cpsr.Z,
+            0b0001 => return !self.cpsr.Z,
+            0b0010 => return self.cpsr.C,
+            0b0011 => return !self.cpsr.C,
+            0b0100 => return self.cpsr.N,
+            0b0101 => return !self.cpsr.N,
+            0b0110 => return self.cpsr.V,
+            0b0111 => return !self.cpsr.V,
+            0b1000 => return self.cpsr.C && !self.cpsr.Z,
+            0b1001 => return !self.cpsr.C && self.cpsr.Z,
+            0b1010 => return self.cpsr.N == self.cpsr.V,
+            0b1011 => return self.cpsr.N != self.cpsr.V,
+            0b1100 => return !self.cpsr.Z && self.cpsr.N == self.cpsr.V,
+            0b1101 => return self.cpsr.Z && self.cpsr.N != self.cpsr.V,
+            0b1110 => return true,
+            0b1111 => unreachable!(),
+            _ => panic!("\n\nUnknown condition {:04b}\n\n", condition),
+        }
+    }
+
+    fn detect_arm_instruction_format(&self, instruction: u32) -> ArmInstructionFormat {
+      if instruction >> 24 & 0xf == 0b1111 {
+        return ArmInstructionFormat::SoftwareInterupt;
+      }
+
+      if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b1 {
+        return ArmInstructionFormat::Cop_RegisterTransfer;
+      }
+
+      if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b0 {
+        return ArmInstructionFormat::Cop_DataOperation;
+      }
+
+      if instruction >> 25 & 0b111 == 0b110 {
+        return ArmInstructionFormat::Cop_DataTransfer;
+      }
+
+      if instruction >> 25 & 0b111 == 0b101 {
+        return ArmInstructionFormat::Branch;
+      }
+
+      if instruction >> 25 & 0b111 == 0b100 {
+        return ArmInstructionFormat::BD_Transfer;
+      }
+
+      if instruction >> 25 & 0b111 == 0b011  && instruction >> 4 & 0b1 == 0b1 {
+        return ArmInstructionFormat::Undefined;
+      }
+
+      if instruction >> 26 & 0b11 == 0b01 {
+        return ArmInstructionFormat::SD_Transfer;
+      }
+
+      if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b1 && instruction >> 7 & 0b1 == 0b1 && instruction >> 4 & 0b1 == 0b1 {
+        return ArmInstructionFormat::HDT_Imm;
+      }
+
+      if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b0 && instruction >> 7 & 0x1f == 0b00001 && instruction >> 4 & 0b1 == 0b1 {
+        return ArmInstructionFormat::HDT_Register;
+      }
+
+      if instruction >> 4 & 0b111111111111111111111111 == 0b000100101111111111110001 {
+        return ArmInstructionFormat::BranchAndExchange;
+      }
+
+      if instruction >> 23 & 0x1f == 0b00010 && instruction >> 20 & 0b11 == 0b00 && instruction >> 4 & 0xff == 0b00001001 {
+        return ArmInstructionFormat::SD_Swap;
+      }
+
+      if instruction >> 23 & 0x1f == 0b00001 && instruction >> 4 & 0xf == 0b1001 {
+        return ArmInstructionFormat::MultiplyLong;
+      }
+
+      if instruction >> 22 & 0x3f == 0b000000 && instruction >> 4 & 0xf == 0b1001 {
+        return ArmInstructionFormat::Multiply;
+      }
+
+      if instruction >> 26 & 0b11 == 0b00 {
+        return ArmInstructionFormat::DataProcessing;
+      }
+
+      return unreachable!();
+    }
+
+    fn data_processing(&mut self, instruction: u32) {
+
+    }
+
+    fn multiply(&mut self, instruction: u32) {
+      
+    }
+
+    fn multiply_long(&mut self, instruction: u32) {
+      
+    }
+
+    fn single_data_swap(&mut self, instruction: u32) {
+      
+    }
+
+    fn branch_and_exchange(&mut self, instruction: u32) {
+      
+    }
+
+    fn halfword_data_transfer_register(&mut self, instruction: u32) {
+      
+    }
+
+    fn halfword_data_transfer_imm(&mut self, instruction: u32) {
+      
+    }
+
+    fn single_data_transfer(&mut self, instruction: u32) {
+      
+    }
+
+    fn undefined(&mut self, instruction: u32) {
+      
+    }
+
+    fn block_data_transfer(&mut self, instruction: u32) {
+      
+    }
+
+    fn branch(&mut self, instruction: u32) {
+      
+    }
+
+    fn coprocessor_data_transfer(&mut self, instruction: u32) {
+      
+    }
+
+    fn coprocessor_data_operation(&mut self, instruction: u32) {
+      
+    }
+
+    fn coprocessor_register_transfer(&mut self, instruction: u32) {
+      
+    }
+
+    fn software_interupt(&mut self, instruction: u32) {
+      
+    }
+
     fn decode32(&mut self, instruction: u32) {
         let condition = instruction >> 28;
         let opcode = (instruction >> 25) & 0b1111;
@@ -241,36 +387,28 @@ impl Cpu {
 
         println!("Instruction: {:032b} \t {:#x}", instruction, instruction);
 
-        match condition {
-            0b0000 => self.cpsr.Z = true,
-            0b0001 => self.cpsr.Z = false,
-            0b0010 => self.cpsr.C = true,
-            0b0011 => self.cpsr.C = false,
-            0b0100 => self.cpsr.N = true,
-            0b0101 => self.cpsr.N = false,
-            0b0110 => self.cpsr.V = true,
-            0b0111 => self.cpsr.V = false,
-            0b1000 => {
-                self.cpsr.C = true;
-                self.cpsr.Z = false;
-            }
-            0b1001 => {
-                self.cpsr.C = false;
-                self.cpsr.Z = true;
-            }
-            0b1010 => self.cpsr.N = self.cpsr.V,
-            0b1011 => self.cpsr.N = !self.cpsr.V,
-            0b1100 => {
-                self.cpsr.Z = false;
-                self.cpsr.N = self.cpsr.V;
-            }
-            0b1101 => {
-                self.cpsr.Z = true;
-                self.cpsr.N = !self.cpsr.V;
-            }
-            0b1110 => (),
-            0b1111 => return,
-            _ => panic!("\n\nUnknown condition {:04b}\n\n", condition),
+        if !self.get_condition_field_result(condition) {
+          return;
+        }
+
+        let format = self.detect_arm_instruction_format(instruction);
+
+        match format {
+            ArmInstructionFormat::DataProcessing => self.data_processing(instruction),
+            ArmInstructionFormat::Multiply => self.multiply(instruction),
+            ArmInstructionFormat::MultiplyLong => self.multiply_long(instruction),
+            ArmInstructionFormat::SD_Swap => self.single_data_swap(instruction),
+            ArmInstructionFormat::BranchAndExchange => self.branch_and_exchange(instruction),
+            ArmInstructionFormat::HDT_Register => self.halfword_data_transfer_register(instruction),
+            ArmInstructionFormat::HDT_Imm => self.halfword_data_transfer_imm(instruction),
+            ArmInstructionFormat::SD_Transfer => self.single_data_transfer(instruction),
+            ArmInstructionFormat::Undefined => self.undefined(instruction),
+            ArmInstructionFormat::BD_Transfer => self.block_data_transfer(instruction),
+            ArmInstructionFormat::Branch => self.branch(instruction),
+            ArmInstructionFormat::Cop_DataTransfer => self.coprocessor_data_transfer(instruction),
+            ArmInstructionFormat::Cop_DataOperation => self.coprocessor_data_operation(instruction),
+            ArmInstructionFormat::Cop_RegisterTransfer => self.coprocessor_register_transfer(instruction),
+            ArmInstructionFormat::SoftwareInterupt => self.software_interupt(instruction),
         }
 
         match opcode {
@@ -773,4 +911,22 @@ enum ExceptionVectors {
   Reserved = 0x00000014,              // Reserved.
   IRQ = 0x00000018,                   // IRQ.
   FIQ = 0x0000001C,                   // FIQ.
+}
+
+enum ArmInstructionFormat {
+  DataProcessing,
+  Multiply,
+  MultiplyLong,
+  SD_Swap,
+  BranchAndExchange,
+  HDT_Register,
+  HDT_Imm,
+  SD_Transfer,
+  Undefined,
+  BD_Transfer,
+  Branch,
+  Cop_DataTransfer,
+  Cop_DataOperation,
+  Cop_RegisterTransfer,
+  SoftwareInterupt,
 }
