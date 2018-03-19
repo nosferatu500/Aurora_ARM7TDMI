@@ -1,37 +1,7 @@
+mod arm;
+
 use interconnect::Interconnect;
-
-#[derive(Clone, Copy)]
-struct StatusRegister {
-    pub n: bool, // 31 // Negative result from ALU flag.
-    pub z: bool, // 30 // Zero result from ALU flag.
-    pub c: bool, // 29 // ALU operation carried out.
-    pub v: bool, // 28 // ALU operation overflowed
-
-    pub m: u8, // 4-0 // Define the processor mode.
-
-    pub i: bool, // 7 // Disable the IRQ.
-    pub f: bool, // 6 // Disable the FIQ.
-
-    pub t: bool, // 5 // Architecture the CPU. // 0 - ARM, 1 - THUMB.
-}
-
-impl StatusRegister {
-    pub fn new() -> StatusRegister {
-        StatusRegister {
-            n: false,
-            z: false,
-            c: false,
-            v: false,
-
-            m: 0b10011,
-
-            i: true,
-            f: true,
-
-            t: false,
-        }
-    }
-}
+use self::arm::ProgramStatusRegister;
 
 pub struct Cpu {
     pc: u32, // r15 // program counter
@@ -43,11 +13,15 @@ pub struct Cpu {
 
     cycles_to_event: u32,
 
+    shifter_operand: u32,
+
+    shifter_carry_out: u32,    
+
     sp: u32, // r13 // stack pointer
     lr: u32, // r14 // link register
 
-    cpsr: StatusRegister, // Current program status register.
-    spsr: StatusRegister, // Saved program status register. // Only for privileged mode.
+    cpsr: ProgramStatusRegister, // Current program status register.
+    spsr: ProgramStatusRegister, // Saved program status register. // Only for privileged mode.
 
     r8_fiq: u32,
     r9_fiq: u32,
@@ -57,23 +31,23 @@ pub struct Cpu {
 
     sp_fiq: u32,
     lr_fiq: u32,
-    spsr_fiq: StatusRegister,
+    spsr_fiq: ProgramStatusRegister,
 
     sp_svc: u32,
     lr_svc: u32,
-    spsr_svc: StatusRegister,
+    spsr_svc: ProgramStatusRegister,
 
     sp_abt: u32,
     lr_abt: u32,
-    spsr_abt: StatusRegister,
+    spsr_abt: ProgramStatusRegister,
 
     sp_irq: u32,
     lr_irq: u32,
-    spsr_irq: StatusRegister,
+    spsr_irq: ProgramStatusRegister,
 
     sp_und: u32,
     lr_und: u32,
-    spsr_und: StatusRegister,
+    spsr_und: ProgramStatusRegister,
 }
 
 impl Cpu {
@@ -89,12 +63,16 @@ impl Cpu {
 
             cycles_to_event: 0,
 
+            shifter_operand: 0,
+
+            shifter_carry_out: 0,   
+
             sp: 0,
 
             lr: 0,
 
-            cpsr: StatusRegister::new(),
-            spsr: StatusRegister::new(),
+            cpsr: ProgramStatusRegister::new(),
+            spsr: ProgramStatusRegister::new(),
 
             r8_fiq: 0,
             r9_fiq: 0,
@@ -104,23 +82,23 @@ impl Cpu {
 
             sp_fiq: 0,
             lr_fiq: 0,
-            spsr_fiq: StatusRegister::new(),
+            spsr_fiq: ProgramStatusRegister::new(),
 
             sp_svc: 0,
             lr_svc: 0,
-            spsr_svc: StatusRegister::new(),
+            spsr_svc: ProgramStatusRegister::new(),
 
             sp_abt: 0,
             lr_abt: 0,
-            spsr_abt: StatusRegister::new(),
+            spsr_abt: ProgramStatusRegister::new(),
 
             sp_irq: 0,
             lr_irq: 0,
-            spsr_irq: StatusRegister::new(),
+            spsr_irq: ProgramStatusRegister::new(),
 
             sp_und: 0,
             lr_und: 0,
-            spsr_und: StatusRegister::new(),
+            spsr_und: ProgramStatusRegister::new(),
         }
     }
 
@@ -129,7 +107,7 @@ impl Cpu {
       self.pc = 0;
 
       self.spsr_svc = self.cpsr;
-      self.cpsr = StatusRegister::new();
+      self.cpsr = ProgramStatusRegister::new();
 
       let sp = 13 as usize;
       let lr = 14 as usize;
@@ -144,8 +122,12 @@ impl Cpu {
       self.cpsr.i = true;
       self.cpsr.f = true;
 
-      self.cpsr.m = 0b10011;
+      self.cpsr.m = [false; 4];
       
+    }
+
+    fn cycle(&mut self) {
+      panic!("unimplemented yet");
     }
 
     fn set_reg(&mut self, index: u32, value: u32) {
@@ -1065,27 +1047,6 @@ impl Cpu {
 
         self.set_reg(rd, res);
     }
-}
-
-enum CpuMode {
-  User = 0b10000,
-  FIQ = 0b10001,
-  IRQ = 0b10010,
-  Supervisor = 0b10011,
-  Abort = 0b10111,
-  Undef = 0b11011,
-  System = 0b11111,
-}
-
-enum ExceptionVectors {
-  Reset = 0x00000000,                 // Supervisor.
-  UndefinedInstruction = 0x00000004,  // Undef.
-  SoftwareInterupt = 0x00000008,      // Supervisor.
-  AbortPrefetch = 0x0000000C,         // Abort.
-  AbortData = 0x00000010,             // Abort.
-  Reserved = 0x00000014,              // Reserved.
-  IRQ = 0x00000018,                   // IRQ.
-  FIQ = 0x0000001C,                   // FIQ.
 }
 
 enum ArmInstructionFormat {
