@@ -1,12 +1,12 @@
-pub struct E_Ram {
+pub struct ERam {
     data: Vec<u8>,
 }
 
-impl E_Ram {
-    pub fn new() -> E_Ram {
+impl ERam {
+    pub fn new() -> ERam {
         let data = vec![0; 256 * 1024];
 
-        E_Ram { data }
+        ERam { data }
     }
 
     pub fn load8(&self, offset: u32) -> u8 {

@@ -1,7 +1,7 @@
 use bios::Bios;
 use rom::Rom;
-use i_ram::I_Ram;
-use e_ram::E_Ram;
+use iram::IRam;
+use eram::ERam;
 
 mod map {
     pub struct Range(u32, u32);
@@ -27,8 +27,8 @@ mod map {
 pub struct Interconnect {
     bios: Bios,
     rom: Rom,
-    i_ram: I_Ram,
-    e_ram: E_Ram,
+    iram: IRam,
+    eram: ERam,
 }
 
 impl Interconnect {
@@ -36,8 +36,8 @@ impl Interconnect {
         Interconnect {
             bios,
             rom,
-            i_ram: I_Ram::new(),
-            e_ram: E_Ram::new(),
+            iram: IRam::new(),
+            eram: ERam::new(),
         }
     }
 
@@ -51,11 +51,11 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::E_RAM.contains(addr) {
-            return self.e_ram.load8(offset);
+            return self.eram.load8(offset);
         }
 
         if let Some(offset) = map::I_RAM.contains(addr) {
-            return self.i_ram.load8(offset);
+            return self.iram.load8(offset);
         }
 
         panic!("Unhandled load 8bit address {:08x}", addr);
@@ -71,11 +71,11 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::E_RAM.contains(addr) {
-            return self.e_ram.load16(offset);
+            return self.eram.load16(offset);
         }
 
         if let Some(offset) = map::I_RAM.contains(addr) {
-            return self.i_ram.load16(offset);
+            return self.iram.load16(offset);
         }
 
         panic!("Unhandled load 16bit address {:08x}", addr);
@@ -91,11 +91,11 @@ impl Interconnect {
         }
 
         if let Some(offset) = map::E_RAM.contains(addr) {
-            return self.e_ram.load32(offset);
+            return self.eram.load32(offset);
         }
 
         if let Some(offset) = map::I_RAM.contains(addr) {
-            return self.i_ram.load32(offset);
+            return self.iram.load32(offset);
         }
 
         panic!("Unhandled load 32bit address {:08x}", addr);
@@ -103,11 +103,11 @@ impl Interconnect {
 
     pub fn store8(&mut self, addr: u32, value: u8) {
         if let Some(offset) = map::E_RAM.contains(addr) {
-            self.e_ram.store8(offset, value);
+            self.eram.store8(offset, value);
         }
 
         if let Some(offset) = map::I_RAM.contains(addr) {
-            self.i_ram.store8(offset, value);
+            self.iram.store8(offset, value);
         }
 
         panic!("Unhandled store 8bit address {:08x}", addr);
@@ -115,11 +115,11 @@ impl Interconnect {
 
     pub fn store16(&mut self, addr: u32, value: u16) {
         if let Some(offset) = map::E_RAM.contains(addr) {
-            self.e_ram.store16(offset, value);
+            self.eram.store16(offset, value);
         }
 
         if let Some(offset) = map::I_RAM.contains(addr) {
-            self.i_ram.store16(offset, value);
+            self.iram.store16(offset, value);
         }
 
         panic!("Unhandled store 16bit address {:08x}", addr);
@@ -127,11 +127,11 @@ impl Interconnect {
 
     pub fn store32(&mut self, addr: u32, value: u32) {
         if let Some(offset) = map::E_RAM.contains(addr) {
-            self.e_ram.store32(offset, value);
+            self.eram.store32(offset, value);
         }
 
         if let Some(offset) = map::I_RAM.contains(addr) {
-            self.i_ram.store32(offset, value);
+            self.iram.store32(offset, value);
         }
 
         panic!("Unhandled store 32bit address {:08x}", addr);

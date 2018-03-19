@@ -2,33 +2,33 @@ use interconnect::Interconnect;
 
 #[derive(Clone, Copy)]
 struct StatusRegister {
-    pub N: bool, // 31 // Negative result from ALU flag.
-    pub Z: bool, // 30 // Zero result from ALU flag.
-    pub C: bool, // 29 // ALU operation carried out.
-    pub V: bool, // 28 // ALU operation overflowed
+    pub n: bool, // 31 // Negative result from ALU flag.
+    pub z: bool, // 30 // Zero result from ALU flag.
+    pub c: bool, // 29 // ALU operation carried out.
+    pub v: bool, // 28 // ALU operation overflowed
 
-    pub M: u8, // 4-0 // Define the processor mode.
+    pub m: u8, // 4-0 // Define the processor mode.
 
-    pub I: bool, // 7 // Disable the IRQ.
-    pub F: bool, // 6 // Disable the FIQ.
+    pub i: bool, // 7 // Disable the IRQ.
+    pub f: bool, // 6 // Disable the FIQ.
 
-    pub T: bool, // 5 // Architecture the CPU. // 0 - ARM, 1 - THUMB.
+    pub t: bool, // 5 // Architecture the CPU. // 0 - ARM, 1 - THUMB.
 }
 
 impl StatusRegister {
     pub fn new() -> StatusRegister {
         StatusRegister {
-            N: false,
-            Z: false,
-            C: false,
-            V: false,
+            n: false,
+            z: false,
+            c: false,
+            v: false,
 
-            M: 0b10011,
+            m: 0b10011,
 
-            I: true,
-            F: true,
+            i: true,
+            f: true,
 
-            T: false,
+            t: false,
         }
     }
 }
@@ -40,6 +40,8 @@ pub struct Cpu {
     current_pc: u32,
 
     interconnect: Interconnect,
+
+    cycles_to_event: u32,
 
     sp: u32, // r13 // stack pointer
     lr: u32, // r14 // link register
@@ -84,6 +86,8 @@ impl Cpu {
             current_pc: pc,
 
             interconnect,
+
+            cycles_to_event: 0,
 
             sp: 0,
 
@@ -135,12 +139,12 @@ impl Cpu {
       self.regs[lr] = 0;
       self.regs[pc] = 0;
 
-      self.cpsr.T = false;
+      self.cpsr.t = false;
 
-      self.cpsr.I = true;
-      self.cpsr.F = true;
+      self.cpsr.i = true;
+      self.cpsr.f = true;
 
-      self.cpsr.M = 0b10011;
+      self.cpsr.m = 0b10011;
       
     }
 
@@ -164,14 +168,14 @@ impl Cpu {
             self.pc = pc.wrapping_add(4);
             self.decode32(instruction);
 
-            self.cpsr.T = false;
+            self.cpsr.t = false;
           },
 
           0b1 => {
             self.pc = pc.wrapping_add(2);
             self.decode16(instruction as u16);
 
-            self.cpsr.T = true;
+            self.cpsr.t = true;
           },
           _ => unreachable!(),
         }
@@ -216,20 +220,20 @@ impl Cpu {
 
     fn get_condition_field_result(&self, condition: u32) -> bool {
       match condition {
-            0b0000 => return self.cpsr.Z,
-            0b0001 => return !self.cpsr.Z,
-            0b0010 => return self.cpsr.C,
-            0b0011 => return !self.cpsr.C,
-            0b0100 => return self.cpsr.N,
-            0b0101 => return !self.cpsr.N,
-            0b0110 => return self.cpsr.V,
-            0b0111 => return !self.cpsr.V,
-            0b1000 => return self.cpsr.C && !self.cpsr.Z,
-            0b1001 => return !self.cpsr.C && self.cpsr.Z,
-            0b1010 => return self.cpsr.N == self.cpsr.V,
-            0b1011 => return self.cpsr.N != self.cpsr.V,
-            0b1100 => return !self.cpsr.Z && self.cpsr.N == self.cpsr.V,
-            0b1101 => return self.cpsr.Z && self.cpsr.N != self.cpsr.V,
+            0b0000 => return self.cpsr.z,
+            0b0001 => return !self.cpsr.z,
+            0b0010 => return self.cpsr.c,
+            0b0011 => return !self.cpsr.c,
+            0b0100 => return self.cpsr.n,
+            0b0101 => return !self.cpsr.n,
+            0b0110 => return self.cpsr.v,
+            0b0111 => return !self.cpsr.v,
+            0b1000 => return self.cpsr.c && !self.cpsr.z,
+            0b1001 => return !self.cpsr.c && self.cpsr.z,
+            0b1010 => return self.cpsr.n == self.cpsr.v,
+            0b1011 => return self.cpsr.n != self.cpsr.v,
+            0b1100 => return !self.cpsr.z && self.cpsr.n == self.cpsr.v,
+            0b1101 => return self.cpsr.z && self.cpsr.n != self.cpsr.v,
             0b1110 => return true,
             0b1111 => unreachable!(),
             _ => panic!("\n\nUnknown condition {:04b}\n\n", condition),
@@ -238,63 +242,63 @@ impl Cpu {
 
     fn detect_thumb_instruction_format(&self, instruction: u16) -> ThumbInstructionFormat {
       if instruction >> 12 & 0xf == 0b1111 {
-        return ThumbInstructionFormat::Long_branch_with_link;
+        return ThumbInstructionFormat::LongBranchWithLink;
       }
 
       if instruction >> 11 & 0x1f == 0b11100 {
-        return ThumbInstructionFormat::Unconditional_branch;
+        return ThumbInstructionFormat::UnconditionalBranch;
       }
 
       if instruction >> 8 & 0xff == 0b11011111 {
-        return ThumbInstructionFormat::Software_Interrupt;
+        return ThumbInstructionFormat::SoftwareInterrupt;
       }
 
       if instruction >> 12 & 0xf == 0b1101 {
-        return ThumbInstructionFormat::Conditional_branch;
+        return ThumbInstructionFormat::ConditionalBranch;
       }
 
       if instruction >> 12 & 0xf == 0b1100 {
-        return ThumbInstructionFormat::Multiply_load_store;
+        return ThumbInstructionFormat::MultiplyLoadStore;
       }
 
       if instruction >> 12 & 0xf == 0b1011 && instruction >> 9 & 0b11 == 0b10 {
-        return ThumbInstructionFormat::Push_Pop_registers;
+        return ThumbInstructionFormat::PushPopRegisters;
       }
 
       if instruction >> 8 & 0xff == 0b10110000 {
-        return ThumbInstructionFormat::Add_offset_to_stack_pointer;
+        return ThumbInstructionFormat::AddOffsetToStackPointer;
       }
 
       if instruction >> 12 & 0xf == 0b1010 {
-        return ThumbInstructionFormat::Load_address;
+        return ThumbInstructionFormat::LoadAddress;
       }
 
       if instruction >> 12 & 0xf == 0b1001 {
-        return ThumbInstructionFormat::SP_relative_load_store;
+        return ThumbInstructionFormat::SPRelativeLoadStore;
       }
 
       if instruction >> 12 & 0xf == 0b1000 {
-        return ThumbInstructionFormat::Load_Store_halfword;
+        return ThumbInstructionFormat::LoadStoreHalfword;
       }
 
       if instruction >> 13 & 0b111 == 0b011 {
-        return ThumbInstructionFormat::Load_Store_with_Imm_Offset;
+        return ThumbInstructionFormat::LoadStoreWithImmOffset;
       }
 
       if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b1 {
-        return ThumbInstructionFormat::Load_Store_Sign_Extended_byte_halfword;
+        return ThumbInstructionFormat::LoadStoreSignExtendedByteHalfword;
       }
 
       if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b0 {
-        return ThumbInstructionFormat::Load_Store_with_Register_Offset;
+        return ThumbInstructionFormat::LoadStoreWithRegisterOffset;
       }
 
       if instruction >> 11 & 0x1f == 0b01001 {
-        return ThumbInstructionFormat::PC_relative_load;
+        return ThumbInstructionFormat::PCRelativeLoad;
       }
 
       if instruction >> 10 & 0x3f == 0b010001 {
-        return ThumbInstructionFormat::HIRegisterOperations_BranchExchange;
+        return ThumbInstructionFormat::HIRegisterOperationsBranchExchange;
       }
 
       if instruction >> 10 & 0x3f == 0b010000 {
@@ -302,11 +306,11 @@ impl Cpu {
       }
 
       if instruction >> 13 & 0b111 == 0b001 {
-        return ThumbInstructionFormat::Move_Compare_Add_Substract_Imm;
+        return ThumbInstructionFormat::MoveCompareAddSubstractImm;
       }
 
       if instruction >> 11 & 0x1f == 0b00011 {
-        return ThumbInstructionFormat::Add_Substract;
+        return ThumbInstructionFormat::AddSubstract;
       }
 
       if instruction >> 13 & 0b111 == 0b000 {
@@ -562,15 +566,15 @@ impl Cpu {
       }
 
       if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b1 {
-        return ArmInstructionFormat::Cop_RegisterTransfer;
+        return ArmInstructionFormat::CopRegisterTransfer;
       }
 
       if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b0 {
-        return ArmInstructionFormat::Cop_DataOperation;
+        return ArmInstructionFormat::CopDataOperation;
       }
 
       if instruction >> 25 & 0b111 == 0b110 {
-        return ArmInstructionFormat::Cop_DataTransfer;
+        return ArmInstructionFormat::CopDataTransfer;
       }
 
       if instruction >> 25 & 0b111 == 0b101 {
@@ -578,7 +582,7 @@ impl Cpu {
       }
 
       if instruction >> 25 & 0b111 == 0b100 {
-        return ArmInstructionFormat::BD_Transfer;
+        return ArmInstructionFormat::BDTransfer;
       }
 
       if instruction >> 25 & 0b111 == 0b011  && instruction >> 4 & 0b1 == 0b1 {
@@ -586,15 +590,15 @@ impl Cpu {
       }
 
       if instruction >> 26 & 0b11 == 0b01 {
-        return ArmInstructionFormat::SD_Transfer;
+        return ArmInstructionFormat::SDTransfer;
       }
 
       if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b1 && instruction >> 7 & 0b1 == 0b1 && instruction >> 4 & 0b1 == 0b1 {
-        return ArmInstructionFormat::HDT_Imm;
+        return ArmInstructionFormat::HDTImm;
       }
 
       if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b0 && instruction >> 7 & 0x1f == 0b00001 && instruction >> 4 & 0b1 == 0b1 {
-        return ArmInstructionFormat::HDT_Register;
+        return ArmInstructionFormat::HDTRegister;
       }
 
       if instruction >> 4 & 0b111111111111111111111111 == 0b000100101111111111110001 {
@@ -602,7 +606,7 @@ impl Cpu {
       }
 
       if instruction >> 23 & 0x1f == 0b00010 && instruction >> 20 & 0b11 == 0b00 && instruction >> 4 & 0xff == 0b00001001 {
-        return ArmInstructionFormat::SD_Swap;
+        return ArmInstructionFormat::SDSwap;
       }
 
       if instruction >> 23 & 0x1f == 0b00001 && instruction >> 4 & 0xf == 0b1001 {
@@ -682,9 +686,9 @@ impl Cpu {
       let rn = instruction & 0xf;
       self.pc = self.get_reg(rn);
       if instruction & 0b1 == 0 {
-        self.cpsr.T = false;
+        self.cpsr.t = false;
       } else {
-        self.cpsr.T = true;
+        self.cpsr.t = true;
       }
     }
 
@@ -764,17 +768,17 @@ impl Cpu {
             ArmInstructionFormat::DataProcessing => self.data_processing(instruction),
             ArmInstructionFormat::Multiply => self.multiply(instruction),
             ArmInstructionFormat::MultiplyLong => self.multiply_long(instruction),
-            ArmInstructionFormat::SD_Swap => self.single_data_swap(instruction),
+            ArmInstructionFormat::SDSwap => self.single_data_swap(instruction),
             ArmInstructionFormat::BranchAndExchange => self.branch_and_exchange(instruction),
-            ArmInstructionFormat::HDT_Register => self.halfword_data_transfer_register(instruction),
-            ArmInstructionFormat::HDT_Imm => self.halfword_data_transfer_imm(instruction),
-            ArmInstructionFormat::SD_Transfer => self.single_data_transfer(instruction),
+            ArmInstructionFormat::HDTRegister => self.halfword_data_transfer_register(instruction),
+            ArmInstructionFormat::HDTImm => self.halfword_data_transfer_imm(instruction),
+            ArmInstructionFormat::SDTransfer => self.single_data_transfer(instruction),
             ArmInstructionFormat::Undefined => self.undefined(instruction),
-            ArmInstructionFormat::BD_Transfer => self.block_data_transfer(instruction),
+            ArmInstructionFormat::BDTransfer => self.block_data_transfer(instruction),
             ArmInstructionFormat::Branch => self.branch(instruction),
-            ArmInstructionFormat::Cop_DataTransfer => self.coprocessor_data_transfer(instruction),
-            ArmInstructionFormat::Cop_DataOperation => self.coprocessor_data_operation(instruction),
-            ArmInstructionFormat::Cop_RegisterTransfer => self.coprocessor_register_transfer(instruction),
+            ArmInstructionFormat::CopDataTransfer => self.coprocessor_data_transfer(instruction),
+            ArmInstructionFormat::CopDataOperation => self.coprocessor_data_operation(instruction),
+            ArmInstructionFormat::CopRegisterTransfer => self.coprocessor_register_transfer(instruction),
             ArmInstructionFormat::SoftwareInterupt => self.software_interupt(instruction),
         }
     }
@@ -786,24 +790,24 @@ impl Cpu {
 
         match format {
             ThumbInstructionFormat::MoveShiftedRegister => self.move_shifted_register(instruction),
-            ThumbInstructionFormat::Add_Substract => self.add_substract(instruction),
-            ThumbInstructionFormat::Move_Compare_Add_Substract_Imm => self.move_compare_add_substract_imm(instruction),
+            ThumbInstructionFormat::AddSubstract => self.add_substract(instruction),
+            ThumbInstructionFormat::MoveCompareAddSubstractImm => self.move_compare_add_substract_imm(instruction),
             ThumbInstructionFormat::AluOperations => self.alu_operations(instruction),
-            ThumbInstructionFormat::HIRegisterOperations_BranchExchange => self.hi_register_operations_branch_exchange(instruction),
-            ThumbInstructionFormat::PC_relative_load => self.pc_relative_load(instruction),
-            ThumbInstructionFormat::Load_Store_with_Register_Offset => self.load_store_with_register_offset(instruction),
-            ThumbInstructionFormat::Load_Store_Sign_Extended_byte_halfword => self.load_store_sign_extended_byte_halfword(instruction),
-            ThumbInstructionFormat::Load_Store_with_Imm_Offset => self.load_store_with_imm_offset(instruction),
-            ThumbInstructionFormat::Load_Store_halfword => self.load_store_halfword(instruction),
-            ThumbInstructionFormat::SP_relative_load_store => self.sp_relative_load_store(instruction),
-            ThumbInstructionFormat::Load_address => self.load_address(instruction),
-            ThumbInstructionFormat::Add_offset_to_stack_pointer => self.add_offset_to_stack_pointer(instruction),
-            ThumbInstructionFormat::Push_Pop_registers => self.push_pop_registers(instruction),
-            ThumbInstructionFormat::Multiply_load_store => self.multiply_load_store(instruction),
-            ThumbInstructionFormat::Conditional_branch => self.conditional_branch(instruction),
-            ThumbInstructionFormat::Software_Interrupt => self.software_interrupt(instruction),
-            ThumbInstructionFormat::Unconditional_branch => self.unconditional_branch(instruction),
-            ThumbInstructionFormat::Long_branch_with_link => self.long_branch_with_link(instruction),
+            ThumbInstructionFormat::HIRegisterOperationsBranchExchange => self.hi_register_operations_branch_exchange(instruction),
+            ThumbInstructionFormat::PCRelativeLoad => self.pc_relative_load(instruction),
+            ThumbInstructionFormat::LoadStoreWithRegisterOffset => self.load_store_with_register_offset(instruction),
+            ThumbInstructionFormat::LoadStoreSignExtendedByteHalfword => self.load_store_sign_extended_byte_halfword(instruction),
+            ThumbInstructionFormat::LoadStoreWithImmOffset => self.load_store_with_imm_offset(instruction),
+            ThumbInstructionFormat::LoadStoreHalfword => self.load_store_halfword(instruction),
+            ThumbInstructionFormat::SPRelativeLoadStore => self.sp_relative_load_store(instruction),
+            ThumbInstructionFormat::LoadAddress => self.load_address(instruction),
+            ThumbInstructionFormat::AddOffsetToStackPointer => self.add_offset_to_stack_pointer(instruction),
+            ThumbInstructionFormat::PushPopRegisters => self.push_pop_registers(instruction),
+            ThumbInstructionFormat::MultiplyLoadStore => self.multiply_load_store(instruction),
+            ThumbInstructionFormat::ConditionalBranch => self.conditional_branch(instruction),
+            ThumbInstructionFormat::SoftwareInterrupt => self.software_interrupt(instruction),
+            ThumbInstructionFormat::UnconditionalBranch => self.unconditional_branch(instruction),
+            ThumbInstructionFormat::LongBranchWithLink => self.long_branch_with_link(instruction),
         }
 
         if instruction >> 12 & 0xf == 0b1011 {
@@ -864,50 +868,50 @@ impl Cpu {
 
             match opcode {
                 0x0 => {
-                    self.cpsr.Z = true;
+                    self.cpsr.z = true;
                 }
                 0x1 => {
-                    self.cpsr.Z = false;
+                    self.cpsr.z = false;
                 }
                 0x2 => {
-                    self.cpsr.C = true;
+                    self.cpsr.c = true;
                 }
                 0x3 => {
-                    self.cpsr.C = false;
+                    self.cpsr.c = false;
                 }
                 0x4 => {
-                    self.cpsr.N = true;
+                    self.cpsr.n = true;
                 }
                 0x5 => {
-                    self.cpsr.N = false;
+                    self.cpsr.n = false;
                 }
                 0x6 => {
-                    self.cpsr.V = true;
+                    self.cpsr.v = true;
                 }
                 0x7 => {
-                    self.cpsr.V = false;
+                    self.cpsr.v = false;
                 }
                 0x8 => {
-                    self.cpsr.C = true;
-                    self.cpsr.Z = false;
+                    self.cpsr.c = true;
+                    self.cpsr.z = false;
                 }
                 0x9 => {
-                    self.cpsr.C = false;
-                    self.cpsr.Z = true;
+                    self.cpsr.c = false;
+                    self.cpsr.z = true;
                 }
                 0xA => {
-                    self.cpsr.N = self.cpsr.V;
+                    self.cpsr.n = self.cpsr.v;
                 }
                 0xB => {
-                    self.cpsr.N = !self.cpsr.V;
+                    self.cpsr.n = !self.cpsr.v;
                 }
                 0xC => {
-                    self.cpsr.Z = false;
-                    self.cpsr.N = self.cpsr.V;
+                    self.cpsr.z = false;
+                    self.cpsr.n = self.cpsr.v;
                 }
                 0xD => {
-                    self.cpsr.Z = true;
-                    self.cpsr.N = !self.cpsr.V;
+                    self.cpsr.z = true;
+                    self.cpsr.n = !self.cpsr.v;
                 }
                 0xE => {
                     unreachable!();
@@ -991,7 +995,7 @@ impl Cpu {
     fn op_adc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = rn.wrapping_add(operand2).wrapping_add(self.cpsr.C as u32);
+        let res = rn.wrapping_add(operand2).wrapping_add(self.cpsr.c as u32);
 
         self.set_reg(rd, res);
     }
@@ -999,7 +1003,7 @@ impl Cpu {
     fn op_sbc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = rn.wrapping_sub(operand2).wrapping_add(self.cpsr.C as u32).wrapping_sub(1);
+        let res = rn.wrapping_sub(operand2).wrapping_add(self.cpsr.c as u32).wrapping_sub(1);
 
         self.set_reg(rd, res);
     }
@@ -1007,33 +1011,33 @@ impl Cpu {
     fn op_rsc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = operand2.wrapping_sub(rn).wrapping_add(self.cpsr.C as u32).wrapping_sub(1);
+        let res = operand2.wrapping_sub(rn).wrapping_add(self.cpsr.c as u32).wrapping_sub(1);
 
         self.set_reg(rd, res);
     }
 
     fn op_tst(&mut self, rn: u32, operand2: u32) {
         let res = rn & operand2;
-        self.cpsr.N = (res >> 31 & 0b1) == 1;
-        self.cpsr.Z = (res >> 30 & 0b1) == 1;
+        self.cpsr.n = (res >> 31 & 0b1) == 1;
+        self.cpsr.z = (res >> 30 & 0b1) == 1;
     }
 
     fn op_teq(&mut self, rn: u32, operand2: u32) {
         let res = rn ^ operand2;
-        self.cpsr.N = (res >> 31 & 0b1) == 1;
-        self.cpsr.Z = (res >> 30 & 0b1) == 1;
+        self.cpsr.n = (res >> 31 & 0b1) == 1;
+        self.cpsr.z = (res >> 30 & 0b1) == 1;
     }
 
     fn op_cmp(&mut self, rn: u32, operand2: u32) {
         let res = rn.wrapping_sub(operand2);
-        self.cpsr.N = (res >> 31 & 0b1) == 1;
-        self.cpsr.Z = (res >> 30 & 0b1) == 1;
+        self.cpsr.n = (res >> 31 & 0b1) == 1;
+        self.cpsr.z = (res >> 30 & 0b1) == 1;
     }
 
     fn op_cmn(&mut self, rn: u32, operand2: u32) {
         let res = rn.wrapping_add(operand2);
-        self.cpsr.N = (res >> 31 & 0b1) == 1;
-        self.cpsr.Z = (res >> 30 & 0b1) == 1;
+        self.cpsr.n = (res >> 31 & 0b1) == 1;
+        self.cpsr.z = (res >> 30 & 0b1) == 1;
     }
 
     fn op_orr(&mut self, rd: u32, rn: u32, operand2: u32) {
@@ -1075,10 +1079,10 @@ enum CpuMode {
 
 enum ExceptionVectors {
   Reset = 0x00000000,                 // Supervisor.
-  Undefined_instruction = 0x00000004, // Undef.
-  Software_interupt = 0x00000008,     // Supervisor.
-  Abort_prefitch = 0x0000000C,        // Abort.
-  Abort_data = 0x00000010,            // Abort.
+  UndefinedInstruction = 0x00000004,  // Undef.
+  SoftwareInterupt = 0x00000008,      // Supervisor.
+  AbortPrefetch = 0x0000000C,         // Abort.
+  AbortData = 0x00000010,             // Abort.
   Reserved = 0x00000014,              // Reserved.
   IRQ = 0x00000018,                   // IRQ.
   FIQ = 0x0000001C,                   // FIQ.
@@ -1088,38 +1092,38 @@ enum ArmInstructionFormat {
   DataProcessing,
   Multiply,
   MultiplyLong,
-  SD_Swap,
+  SDSwap,
   BranchAndExchange,
-  HDT_Register,
-  HDT_Imm,
-  SD_Transfer,
+  HDTRegister,
+  HDTImm,
+  SDTransfer,
   Undefined,
-  BD_Transfer,
+  BDTransfer,
   Branch,
-  Cop_DataTransfer,
-  Cop_DataOperation,
-  Cop_RegisterTransfer,
+  CopDataTransfer,
+  CopDataOperation,
+  CopRegisterTransfer,
   SoftwareInterupt,
 }
 
 enum ThumbInstructionFormat {
   MoveShiftedRegister,
-  Add_Substract,
-  Move_Compare_Add_Substract_Imm,
+  AddSubstract,
+  MoveCompareAddSubstractImm,
   AluOperations,
-  HIRegisterOperations_BranchExchange,
-  PC_relative_load,
-  Load_Store_with_Register_Offset,
-  Load_Store_Sign_Extended_byte_halfword,
-  Load_Store_with_Imm_Offset,
-  Load_Store_halfword,
-  SP_relative_load_store,
-  Load_address,
-  Add_offset_to_stack_pointer,
-  Push_Pop_registers,
-  Multiply_load_store,
-  Conditional_branch,
-  Software_Interrupt,
-  Unconditional_branch,
-  Long_branch_with_link,
+  HIRegisterOperationsBranchExchange,
+  PCRelativeLoad,
+  LoadStoreWithRegisterOffset,
+  LoadStoreSignExtendedByteHalfword,
+  LoadStoreWithImmOffset,
+  LoadStoreHalfword,
+  SPRelativeLoadStore,
+  LoadAddress,
+  AddOffsetToStackPointer,
+  PushPopRegisters,
+  MultiplyLoadStore,
+  ConditionalBranch,
+  SoftwareInterrupt,
+  UnconditionalBranch,
+  LongBranchWithLink,
 }

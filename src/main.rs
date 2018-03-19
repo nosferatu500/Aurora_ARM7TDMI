@@ -4,8 +4,8 @@ mod bios;
 mod cpu;
 mod interconnect;
 mod rom;
-mod e_ram;
-mod i_ram;
+mod eram;
+mod iram;
 
 use bios::Bios;
 use cpu::Cpu;
