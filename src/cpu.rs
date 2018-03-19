@@ -375,7 +375,28 @@ impl Cpu {
     }
     
     fn move_compare_add_substract_imm(&mut self, instruction: u16) {
-      panic!("Move_Compare_Add_Substract_Imm unimplemented yet.");
+      let opcode = instruction >> 11 & 0b11;
+
+      let rd = instruction >> 8 & 0b111;
+      let offset8 = instruction & 0xf;
+
+      match opcode {
+          0b00 => {
+              self.set_reg(rd as u32, offset8 as u32);
+          }
+          0b01 => {
+              panic!("unimplimented yet");
+          }
+          0b10 => {
+              let res = self.get_reg(rd as u32).wrapping_add(offset8 as u32);
+              self.set_reg(rd as u32, res);
+          }
+          0b11 => {
+              let res = self.get_reg(rd as u32).wrapping_sub(offset8 as u32);
+              self.set_reg(rd as u32, res);
+          }
+          _ => unreachable!(),
+      }
     }
     
     fn alu_operations(&mut self, instruction: u16) {
@@ -465,11 +486,43 @@ impl Cpu {
     }
     
     fn sp_relative_load_store(&mut self, instruction: u16) {
-      panic!("SP_relative_load_store unimplemented yet.");
+      let l = instruction >> 11 & 0b1;
+
+      let rd = instruction >> 8 & 0b111;
+      let word8 = (instruction & 0xf) as u32;
+
+      let sp = self.sp;
+
+      match l {
+          0b0 => {
+              let addr = sp.wrapping_add(word8);
+              let value = self.get_reg(rd as u32);
+              self.interconnect.store32(addr, value);
+          }
+          0b1 => {
+              let addr = sp.wrapping_add(word8);
+              let value = self.interconnect.load32(addr);
+              self.set_reg(rd as u32, value);
+          }
+          _ => unreachable!(),
+      }
     }
     
     fn load_address(&mut self, instruction: u16) {
-      panic!("Load_address unimplemented yet.");
+      let sp = instruction >> 11 & 0b1;
+
+      let rd = instruction >> 8 & 0b111;
+      let word8 = instruction & 0xf;
+
+      if sp == 0b0 {
+          let res = self.current_pc.wrapping_add(word8 as u32);
+          self.set_reg(rd as u32, res);
+      }
+
+      if sp == 0b1 {
+        let res = self.sp.wrapping_add(word8 as u32);
+        self.set_reg(rd as u32, res);
+      }
     }
     
     fn add_offset_to_stack_pointer(&mut self, instruction: u16) {
@@ -493,7 +546,10 @@ impl Cpu {
     }
     
     fn unconditional_branch(&mut self, instruction: u16) {
-      panic!("Unconditional_branch unimplemented yet.");
+      let offset11 = instruction & 0x7ff;
+      self.pc = ((offset11 as i32) << 1) as u32;
+
+      println!("Unimplement probably");
     }
     
     fn long_branch_with_link(&mut self, instruction: u16) {
@@ -750,80 +806,7 @@ impl Cpu {
             ThumbInstructionFormat::Long_branch_with_link => self.long_branch_with_link(instruction),
         }
 
-          if instruction >> 13 & 0b111 == 0b001 {
-            // Format III
-            let opcode = instruction >> 11 & 0b11;
-
-            let rd = instruction >> 8 & 0b111;
-            let nn = instruction & 0x7;
-
-            match opcode {
-                0b00 => {
-                    let res = nn;
-                    self.set_reg(rd as u32, res as u32);
-                }
-                0b01 => {
-                    let res = self.get_reg(rd as u32) - nn as u32;
-                    //self.set_reg(rd as u32, res);
-                    println!("unimplimented yet {}", res);
-                }
-                0b10 => {
-                    let res = self.get_reg(rd as u32) + nn as u32;
-                    self.set_reg(rd as u32, res);
-                }
-                0b11 => {
-                    let res = self.get_reg(rd as u32) - nn as u32;
-                    self.set_reg(rd as u32, res);
-                }
-                _ => unreachable!(),
-            }
-
-            return;
-        } else if instruction >> 12 & 0xf == 0b1001 {
-            // Format XI
-            let opcode = instruction >> 11 & 0b1;
-
-            let rd = instruction >> 8 & 0b111;
-            let nn = (instruction & 0x7) as u32;
-
-            let sp = self.sp;
-
-            match opcode {
-                0b0 => {
-                    let addr = sp + nn;
-                    let value = self.get_reg(rd as u32);
-                    self.interconnect.store32(addr, value);
-                }
-                0b1 => {
-                    let addr = sp + nn;
-                    let value = self.interconnect.load32(addr);
-                    self.set_reg(rd as u32, value);
-                }
-                _ => unreachable!(),
-            }
-
-            return;
-        } else if instruction >> 12 & 0xf == 0b1010 {
-            // Format XII
-            let opcode = instruction >> 11 & 0b1;
-
-            let rd = instruction >> 8 & 0b111;
-            let nn = instruction & 0x7;
-
-            match opcode {
-                0b0 => {
-                    let res = (4 & !2) + nn;
-                    self.set_reg(rd as u32, res as u32);
-                }
-                0b1 => {
-                    let res = self.sp + nn as u32;
-                    self.set_reg(rd as u32, res);
-                }
-                _ => unreachable!(),
-            }
-
-            return;
-        } else if instruction >> 12 & 0xf == 0b1011 {
+        if instruction >> 12 & 0xf == 0b1011 {
             // Format XIV
             let opcode = instruction >> 11 & 0b1;
 
@@ -949,13 +932,6 @@ impl Cpu {
                 1 => println!("Unimplemented PUSH/PULL logic"),
                 _ => unreachable!(),
             }
-
-            return;
-        } else if instruction >> 11 & 0x1f == 0b11100 {
-            // Format XVIII
-            let nn = instruction & 0x7ff;
-
-            self.pc = (nn as i32) as u32;
 
             return;
         } else if instruction >> 11 & 0x1f == 0x1f {
