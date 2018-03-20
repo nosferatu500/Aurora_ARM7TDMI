@@ -1,7 +1,8 @@
 mod arm;
 
 use interconnect::Interconnect;
-use self::arm::ProgramStatusRegister;
+
+use self::arm::*;
 
 pub struct Cpu {
     pc: u32, // r15 // program counter
@@ -16,6 +17,10 @@ pub struct Cpu {
     shifter_operand: u32,
 
     shifter_carry_out: u32,    
+
+    execution_mode: ExecutionMode,
+
+    instruction_width: WordSize,
 
     sp: u32, // r13 // stack pointer
     lr: u32, // r14 // link register
@@ -67,6 +72,10 @@ impl Cpu {
 
             shifter_carry_out: 0,   
 
+            execution_mode: ExecutionMode::Thumb,
+
+            instruction_width: WordSize::Thumb,
+
             sp: 0,
 
             lr: 0,
@@ -103,31 +112,49 @@ impl Cpu {
     }
 
     pub fn reset(&mut self) {
+      self.set_mode(ExecutionMode::Arm);
+
       self.lr_svc = self.pc;
       self.pc = 0;
 
       self.spsr_svc = self.cpsr;
       self.cpsr = ProgramStatusRegister::new();
 
-      let sp = 13 as usize;
-      let lr = 14 as usize;
-      let pc = 15 as usize;
-
-      self.regs[sp] = 0;
-      self.regs[lr] = 0;
-      self.regs[pc] = 0;
+      self.regs[ARM_SP] = 0;
+      self.regs[ARM_LR] = 0;
+      self.regs[ARM_PC] = 0;
 
       self.cpsr.t = false;
 
       self.cpsr.i = true;
       self.cpsr.f = true;
 
-      self.cpsr.m = [false; 4];
+      self.cpsr.m = PrivilegeMode::System;
       
     }
 
     fn cycle(&mut self) {
       panic!("unimplemented yet");
+    }
+
+    fn set_mode(&mut self, mode: ExecutionMode) {
+      if mode == self.execution_mode {
+        return;
+      }
+
+      self.execution_mode = mode;
+
+      match mode {
+        ExecutionMode::Arm => {
+          self.cpsr.t = false;
+          self.instruction_width = WordSize::Arm;
+        },
+        ExecutionMode::Thumb => {
+          self.cpsr.t = true;
+          self.instruction_width = WordSize::Thumb;
+        },
+        _ => unreachable!(),
+      }
     }
 
     fn set_reg(&mut self, index: u32, value: u32) {

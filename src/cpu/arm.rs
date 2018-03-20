@@ -1,13 +1,20 @@
-const ARM_SP: u32 = 13;
-const ARM_LR: u32 = 14;
-const ARM_PC: u32 = 15;
+pub const ARM_SP: usize = 13;
+pub const ARM_LR: usize = 14;
+pub const ARM_PC: usize = 15;
 
-enum ExecutionMode {
+#[derive(Clone, Copy, PartialEq)]
+pub enum ExecutionMode {
   Arm = 0,
 	Thumb = 1,
 }
 
-enum PrivilegeMode {
+pub enum WordSize {
+  Arm = 4,
+	Thumb = 2,
+}
+
+#[derive(Clone, Copy)]
+pub enum PrivilegeMode {
 	User = 0b10000,
 	Fiq = 0b10001,
 	Irq = 0b10010,
@@ -42,7 +49,7 @@ pub struct ProgramStatusRegister {
 
     pub t: bool,           // 5 // Architecture the CPU. // 0 - ARM, 1 - THUMB.
 
-    pub m: [bool; 4],      // 4-0 // Define the processor mode.
+    pub m: PrivilegeMode,      // 4-0 // Define the processor mode.
 
 }
 
@@ -61,7 +68,7 @@ impl ProgramStatusRegister {
 
             t: false,
 
-            m: [false; 4],
+            m: PrivilegeMode::System,
         }
     }
 }
