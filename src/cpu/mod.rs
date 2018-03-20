@@ -16,7 +16,7 @@ pub struct Cpu {
 
     shifter_operand: u32,
 
-    shifter_carry_out: u32,    
+    shifter_carry_out: u32,
 
     execution_mode: ExecutionMode,
 
@@ -25,8 +25,10 @@ pub struct Cpu {
     sp: u32, // r13 // stack pointer
     lr: u32, // r14 // link register
 
+    offset: u32,
+
     cpsr: ProgramStatusRegister, // Current program status register.
-    spsr: ProgramStatusRegister, // Saved program status register. // Only for privileged mode.
+    spsr: [ProgramStatusRegister; 7],
 
     r8_fiq: u32,
     r9_fiq: u32,
@@ -70,7 +72,7 @@ impl Cpu {
 
             shifter_operand: 0,
 
-            shifter_carry_out: 0,   
+            shifter_carry_out: 0,
 
             execution_mode: ExecutionMode::Thumb,
 
@@ -80,8 +82,10 @@ impl Cpu {
 
             lr: 0,
 
+            offset: 0,
+
             cpsr: ProgramStatusRegister::new(),
-            spsr: ProgramStatusRegister::new(),
+            spsr: [ProgramStatusRegister::new(); 7],
 
             r8_fiq: 0,
             r9_fiq: 0,
@@ -112,49 +116,52 @@ impl Cpu {
     }
 
     pub fn reset(&mut self) {
-      self.set_mode(ExecutionMode::Arm);
+        self.set_mode(ExecutionMode::Arm);
 
-      self.lr_svc = self.pc;
-      self.pc = 0;
+        self.lr_svc = self.pc;
+        self.pc = 0;
 
-      self.spsr_svc = self.cpsr;
-      self.cpsr = ProgramStatusRegister::new();
+        self.spsr_svc = self.cpsr;
+        self.cpsr = ProgramStatusRegister::new();
 
-      self.regs[ARM_SP] = 0;
-      self.regs[ARM_LR] = 0;
-      self.regs[ARM_PC] = 0;
+        self.regs[ARM_SP] = 0;
+        self.regs[ARM_LR] = 0;
+        self.regs[ARM_PC] = 0;
 
-      self.cpsr.t = false;
+        self.cpsr.t = false;
 
-      self.cpsr.i = true;
-      self.cpsr.f = true;
+        self.cpsr.i = true;
+        self.cpsr.f = true;
 
-      self.cpsr.m = PrivilegeMode::System;
-      
+        self.cpsr.m = PrivilegeMode::System;
     }
 
     fn cycle(&mut self) {
-      panic!("unimplemented yet");
+        panic!("unimplemented yet");
     }
 
     fn set_mode(&mut self, mode: ExecutionMode) {
-      if mode == self.execution_mode {
-        return;
-      }
+        if mode == self.execution_mode {
+            return;
+        }
 
-      self.execution_mode = mode;
+        self.execution_mode = mode;
 
-      match mode {
-        ExecutionMode::Arm => {
-          self.cpsr.t = false;
-          self.instruction_width = WordSize::Arm;
-        },
-        ExecutionMode::Thumb => {
-          self.cpsr.t = true;
-          self.instruction_width = WordSize::Thumb;
-        },
-        _ => unreachable!(),
-      }
+        match mode {
+            ExecutionMode::Arm => {
+                self.cpsr.t = false;
+                self.instruction_width = WordSize::Arm;
+            }
+            ExecutionMode::Thumb => {
+                self.cpsr.t = true;
+                self.instruction_width = WordSize::Thumb;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn has_spsr(&mut self, mode: PrivilegeMode) -> bool {
+        mode != PrivilegeMode::System && mode != PrivilegeMode::User
     }
 
     fn set_reg(&mut self, index: u32, value: u32) {
@@ -166,27 +173,27 @@ impl Cpu {
     }
 
     pub fn run_next_instruction(&mut self) {
-        let pc = self.pc;
-
         let instruction = self.interconnect.load32(self.pc);
 
-        self.current_pc = pc;
+        self.current_pc = self.pc;
+
+        let pc = self.pc;
 
         match instruction >> 5 & 1 {
-          0b0 => {
-            self.pc = pc.wrapping_add(4);
-            self.decode32(instruction);
+            0b0 => {
+                self.pc = pc.wrapping_add(WordSize::Arm as u32);
+                self.decode32(instruction);
 
-            self.cpsr.t = false;
-          },
+                self.cpsr.t = false;
+            }
 
-          0b1 => {
-            self.pc = pc.wrapping_add(2);
-            self.decode16(instruction as u16);
+            0b1 => {
+                self.pc = pc.wrapping_add(WordSize::Thumb as u32);
+                self.decode16(instruction as u16);
 
-            self.cpsr.t = true;
-          },
-          _ => unreachable!(),
+                self.cpsr.t = true;
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -228,7 +235,7 @@ impl Cpu {
     }
 
     fn get_condition_field_result(&self, condition: u32) -> bool {
-      match condition {
+        match condition {
             0b0000 => return self.cpsr.z,
             0b0001 => return !self.cpsr.z,
             0b0010 => return self.cpsr.c,
@@ -250,83 +257,83 @@ impl Cpu {
     }
 
     fn detect_thumb_instruction_format(&self, instruction: u16) -> ThumbInstructionFormat {
-      if instruction >> 12 & 0xf == 0b1111 {
-        return ThumbInstructionFormat::LongBranchWithLink;
-      }
+        if instruction >> 12 & 0xf == 0b1111 {
+            return ThumbInstructionFormat::LongBranchWithLink;
+        }
 
-      if instruction >> 11 & 0x1f == 0b11100 {
-        return ThumbInstructionFormat::UnconditionalBranch;
-      }
+        if instruction >> 11 & 0x1f == 0b11100 {
+            return ThumbInstructionFormat::UnconditionalBranch;
+        }
 
-      if instruction >> 8 & 0xff == 0b11011111 {
-        return ThumbInstructionFormat::SoftwareInterrupt;
-      }
+        if instruction >> 8 & 0xff == 0b11011111 {
+            return ThumbInstructionFormat::SoftwareInterrupt;
+        }
 
-      if instruction >> 12 & 0xf == 0b1101 {
-        return ThumbInstructionFormat::ConditionalBranch;
-      }
+        if instruction >> 12 & 0xf == 0b1101 {
+            return ThumbInstructionFormat::ConditionalBranch;
+        }
 
-      if instruction >> 12 & 0xf == 0b1100 {
-        return ThumbInstructionFormat::MultiplyLoadStore;
-      }
+        if instruction >> 12 & 0xf == 0b1100 {
+            return ThumbInstructionFormat::MultiplyLoadStore;
+        }
 
-      if instruction >> 12 & 0xf == 0b1011 && instruction >> 9 & 0b11 == 0b10 {
-        return ThumbInstructionFormat::PushPopRegisters;
-      }
+        if instruction >> 12 & 0xf == 0b1011 && instruction >> 9 & 0b11 == 0b10 {
+            return ThumbInstructionFormat::PushPopRegisters;
+        }
 
-      if instruction >> 8 & 0xff == 0b10110000 {
-        return ThumbInstructionFormat::AddOffsetToStackPointer;
-      }
+        if instruction >> 8 & 0xff == 0b10110000 {
+            return ThumbInstructionFormat::AddOffsetToStackPointer;
+        }
 
-      if instruction >> 12 & 0xf == 0b1010 {
-        return ThumbInstructionFormat::LoadAddress;
-      }
+        if instruction >> 12 & 0xf == 0b1010 {
+            return ThumbInstructionFormat::LoadAddress;
+        }
 
-      if instruction >> 12 & 0xf == 0b1001 {
-        return ThumbInstructionFormat::SPRelativeLoadStore;
-      }
+        if instruction >> 12 & 0xf == 0b1001 {
+            return ThumbInstructionFormat::SPRelativeLoadStore;
+        }
 
-      if instruction >> 12 & 0xf == 0b1000 {
-        return ThumbInstructionFormat::LoadStoreHalfword;
-      }
+        if instruction >> 12 & 0xf == 0b1000 {
+            return ThumbInstructionFormat::LoadStoreHalfword;
+        }
 
-      if instruction >> 13 & 0b111 == 0b011 {
-        return ThumbInstructionFormat::LoadStoreWithImmOffset;
-      }
+        if instruction >> 13 & 0b111 == 0b011 {
+            return ThumbInstructionFormat::LoadStoreWithImmOffset;
+        }
 
-      if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b1 {
-        return ThumbInstructionFormat::LoadStoreSignExtendedByteHalfword;
-      }
+        if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b1 {
+            return ThumbInstructionFormat::LoadStoreSignExtendedByteHalfword;
+        }
 
-      if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b0 {
-        return ThumbInstructionFormat::LoadStoreWithRegisterOffset;
-      }
+        if instruction >> 12 & 0xf == 0b0101 && instruction >> 9 & 0b1 == 0b0 {
+            return ThumbInstructionFormat::LoadStoreWithRegisterOffset;
+        }
 
-      if instruction >> 11 & 0x1f == 0b01001 {
-        return ThumbInstructionFormat::PCRelativeLoad;
-      }
+        if instruction >> 11 & 0x1f == 0b01001 {
+            return ThumbInstructionFormat::PCRelativeLoad;
+        }
 
-      if instruction >> 10 & 0x3f == 0b010001 {
-        return ThumbInstructionFormat::HIRegisterOperationsBranchExchange;
-      }
+        if instruction >> 10 & 0x3f == 0b010001 {
+            return ThumbInstructionFormat::HIRegisterOperationsBranchExchange;
+        }
 
-      if instruction >> 10 & 0x3f == 0b010000 {
-        return ThumbInstructionFormat::AluOperations;
-      }
+        if instruction >> 10 & 0x3f == 0b010000 {
+            return ThumbInstructionFormat::AluOperations;
+        }
 
-      if instruction >> 13 & 0b111 == 0b001 {
-        return ThumbInstructionFormat::MoveCompareAddSubstractImm;
-      }
+        if instruction >> 13 & 0b111 == 0b001 {
+            return ThumbInstructionFormat::MoveCompareAddSubstractImm;
+        }
 
-      if instruction >> 11 & 0x1f == 0b00011 {
-        return ThumbInstructionFormat::AddSubstract;
-      }
+        if instruction >> 11 & 0x1f == 0b00011 {
+            return ThumbInstructionFormat::AddSubstract;
+        }
 
-      if instruction >> 13 & 0b111 == 0b000 {
-        return ThumbInstructionFormat::MoveShiftedRegister;
-      }
+        if instruction >> 13 & 0b111 == 0b000 {
+            return ThumbInstructionFormat::MoveShiftedRegister;
+        }
 
-      return unreachable!();
+        return unreachable!();
     }
 
     fn move_shifted_register(&mut self, instruction: u16) {
@@ -352,289 +359,305 @@ impl Cpu {
                 self.set_reg(rd as u32, res as u32);
             }
             0b11 => unreachable!(),
-            
+
             _ => unreachable!(),
         }
     }
 
     fn add_substract(&mut self, instruction: u16) {
-      let opcode = instruction >> 9 & 0b1;
+        let opcode = instruction >> 9 & 0b1;
 
-      let rn = instruction >> 6 & 0b111;
+        let rn = instruction >> 6 & 0b111;
 
-      let rs = instruction >> 3 & 0b111;
+        let rs = instruction >> 3 & 0b111;
 
-      let rd = instruction & 0b111;
+        let rd = instruction & 0b111;
 
-      match opcode {
-          0b00 => {
-              let res = self.get_reg(rs as u32).wrapping_add(self.get_reg(rn as u32));
-              self.set_reg(rd as u32, res);
-          }
-          0b01 => {
-              let res = self.get_reg(rs as u32).wrapping_add(self.get_reg(rn as u32));
-              self.set_reg(rd as u32, res);
-          }
-          0b10 => {
-              let res = self.get_reg(rs as u32).wrapping_sub(rn as u32);
-              self.set_reg(rd as u32, res);
-          }
-          0b11 => {
-              let res = self.get_reg(rs as u32).wrapping_sub(rn as u32);
-              self.set_reg(rd as u32, res);
-          }
-          _ => unreachable!(),
-      }
+        match opcode {
+            0b00 => {
+                let res = self.get_reg(rs as u32)
+                    .wrapping_add(self.get_reg(rn as u32));
+                self.set_reg(rd as u32, res);
+            }
+            0b01 => {
+                let res = self.get_reg(rs as u32)
+                    .wrapping_add(self.get_reg(rn as u32));
+                self.set_reg(rd as u32, res);
+            }
+            0b10 => {
+                let res = self.get_reg(rs as u32).wrapping_sub(rn as u32);
+                self.set_reg(rd as u32, res);
+            }
+            0b11 => {
+                let res = self.get_reg(rs as u32).wrapping_sub(rn as u32);
+                self.set_reg(rd as u32, res);
+            }
+            _ => unreachable!(),
+        }
     }
-    
+
     fn move_compare_add_substract_imm(&mut self, instruction: u16) {
-      let opcode = instruction >> 11 & 0b11;
+        let opcode = instruction >> 11 & 0b11;
 
-      let rd = instruction >> 8 & 0b111;
-      let offset8 = instruction & 0xf;
+        let rd = instruction >> 8 & 0b111;
+        let offset8 = instruction & 0xf;
 
-      match opcode {
-          0b00 => {
-              self.set_reg(rd as u32, offset8 as u32);
-          }
-          0b01 => {
-              panic!("unimplimented yet");
-          }
-          0b10 => {
-              let res = self.get_reg(rd as u32).wrapping_add(offset8 as u32);
-              self.set_reg(rd as u32, res);
-          }
-          0b11 => {
-              let res = self.get_reg(rd as u32).wrapping_sub(offset8 as u32);
-              self.set_reg(rd as u32, res);
-          }
-          _ => unreachable!(),
-      }
+        match opcode {
+            0b00 => {
+                self.set_reg(rd as u32, offset8 as u32);
+            }
+            0b01 => {
+                panic!("unimplimented yet");
+            }
+            0b10 => {
+                let res = self.get_reg(rd as u32).wrapping_add(offset8 as u32);
+                self.set_reg(rd as u32, res);
+            }
+            0b11 => {
+                let res = self.get_reg(rd as u32).wrapping_sub(offset8 as u32);
+                self.set_reg(rd as u32, res);
+            }
+            _ => unreachable!(),
+        }
     }
-    
+
     fn alu_operations(&mut self, instruction: u16) {
-      panic!("AluOperations unimplemented yet.");
+        panic!("AluOperations unimplemented yet.");
     }
-    
+
     fn hi_register_operations_branch_exchange(&mut self, instruction: u16) {
-      panic!("HIRegisterOperations_BranchExchange unimplemented yet.");
+        panic!("HIRegisterOperations_BranchExchange unimplemented yet.");
     }
-    
+
     fn pc_relative_load(&mut self, instruction: u16) {
-      panic!("PC_relative_load unimplemented yet.");
+        panic!("PC_relative_load unimplemented yet.");
     }
-    
+
     fn load_store_with_register_offset(&mut self, instruction: u16) {
-      let ro = instruction >> 6 & 0b111;
-      let rb = instruction >> 3 & 0b111;
-      let rd = instruction & 0b111;
+        let ro = instruction >> 6 & 0b111;
+        let rb = instruction >> 3 & 0b111;
+        let rd = instruction & 0b111;
 
-      let b = instruction >> 10 & 0b1;
-      let l = instruction >> 11 & 0b1;
+        let b = instruction >> 10 & 0b1;
+        let l = instruction >> 11 & 0b1;
 
-      if l == 0b0 && b == 0b0 {
-        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
-        let value = self.get_reg(rd as u32);
-        self.interconnect.store32(address, value);
-      }
+        if l == 0b0 && b == 0b0 {
+            let address = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let value = self.get_reg(rd as u32);
+            self.interconnect.store32(address, value);
+        }
 
-      if l == 0b0 && b == 0b1 {
-        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
-        let value = self.get_reg(rd as u32) as u8;
-        self.interconnect.store8(address, value);
-      }
+        if l == 0b0 && b == 0b1 {
+            let address = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let value = self.get_reg(rd as u32) as u8;
+            self.interconnect.store8(address, value);
+        }
 
-      if l == 0b1 && b == 0b0 {
-        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
-        let res = self.interconnect.load32(address);
-        self.set_reg(rd as u32, res);
-      }
+        if l == 0b1 && b == 0b0 {
+            let address = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let res = self.interconnect.load32(address);
+            self.set_reg(rd as u32, res);
+        }
 
-      if l == 0b1 && b == 0b1 {
-        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
-        let res = self.interconnect.load8(addr);
-        self.set_reg(rd as u32, res as u32);
-      }
+        if l == 0b1 && b == 0b1 {
+            let addr = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let res = self.interconnect.load8(addr);
+            self.set_reg(rd as u32, res as u32);
+        }
     }
-    
+
     fn load_store_sign_extended_byte_halfword(&mut self, instruction: u16) {
-      let h = instruction >> 11 & 0b1;
-      let s = instruction >> 10 & 0b1;
+        let h = instruction >> 11 & 0b1;
+        let s = instruction >> 10 & 0b1;
 
-      let ro = instruction >> 6 & 0b111;
-      let rb = instruction >> 3 & 0b111;
-      let rd = instruction & 0b111;
+        let ro = instruction >> 6 & 0b111;
+        let rb = instruction >> 3 & 0b111;
+        let rd = instruction & 0b111;
 
-      if s == 0b0 && h == 0b0 {
-        let address = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
-        let value = self.get_reg(rd as u32) as u16;
-        self.interconnect.store16(address, value);
-      }
+        if s == 0b0 && h == 0b0 {
+            let address = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let value = self.get_reg(rd as u32) as u16;
+            self.interconnect.store16(address, value);
+        }
 
-      if s == 0b0 && h == 0b1 {
-        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
-        let res = self.interconnect.load8(addr);
-        self.set_reg(rd as u32, res as u32);
-      }
+        if s == 0b0 && h == 0b1 {
+            let addr = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let res = self.interconnect.load8(addr);
+            self.set_reg(rd as u32, res as u32);
+        }
 
-      if s == 0b1 && h == 0b0 {
-        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32));
-        let res = self.interconnect.load16(addr) as i32;
-        self.set_reg(rd as u32, res as u32);
-      }
+        if s == 0b1 && h == 0b0 {
+            let addr = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let res = self.interconnect.load16(addr) as i32;
+            self.set_reg(rd as u32, res as u32);
+        }
 
-      if s == 0b1 && h == 0b1 {
-        let addr = self.get_reg(rb as u32).wrapping_add(self.get_reg(ro as u32)) ;
-        let res = self.interconnect.load16(addr) as i32;
-        self.set_reg(rd as u32, res as u32);
-      }
+        if s == 0b1 && h == 0b1 {
+            let addr = self.get_reg(rb as u32)
+                .wrapping_add(self.get_reg(ro as u32));
+            let res = self.interconnect.load16(addr) as i32;
+            self.set_reg(rd as u32, res as u32);
+        }
     }
-    
+
     fn load_store_with_imm_offset(&mut self, instruction: u16) {
-      panic!("Load_Store_with_Imm_Offset unimplemented yet.");
+        panic!("Load_Store_with_Imm_Offset unimplemented yet.");
     }
-    
+
     fn load_store_halfword(&mut self, instruction: u16) {
-      panic!("Load_Store_halfword unimplemented yet.");
+        panic!("Load_Store_halfword unimplemented yet.");
     }
-    
+
     fn sp_relative_load_store(&mut self, instruction: u16) {
-      let l = instruction >> 11 & 0b1;
+        let l = instruction >> 11 & 0b1;
 
-      let rd = instruction >> 8 & 0b111;
-      let word8 = (instruction & 0xf) as u32;
+        let rd = instruction >> 8 & 0b111;
+        let word8 = (instruction & 0xf) as u32;
 
-      let sp = self.sp;
+        let sp = self.sp;
 
-      match l {
-          0b0 => {
-              let addr = sp.wrapping_add(word8);
-              let value = self.get_reg(rd as u32);
-              self.interconnect.store32(addr, value);
-          }
-          0b1 => {
-              let addr = sp.wrapping_add(word8);
-              let value = self.interconnect.load32(addr);
-              self.set_reg(rd as u32, value);
-          }
-          _ => unreachable!(),
-      }
+        match l {
+            0b0 => {
+                let addr = sp.wrapping_add(word8);
+                let value = self.get_reg(rd as u32);
+                self.interconnect.store32(addr, value);
+            }
+            0b1 => {
+                let addr = sp.wrapping_add(word8);
+                let value = self.interconnect.load32(addr);
+                self.set_reg(rd as u32, value);
+            }
+            _ => unreachable!(),
+        }
     }
-    
+
     fn load_address(&mut self, instruction: u16) {
-      let sp = instruction >> 11 & 0b1;
+        let sp = instruction >> 11 & 0b1;
 
-      let rd = instruction >> 8 & 0b111;
-      let word8 = instruction & 0xf;
+        let rd = instruction >> 8 & 0b111;
+        let word8 = instruction & 0xf;
 
-      if sp == 0b0 {
-          let res = self.current_pc.wrapping_add(word8 as u32);
-          self.set_reg(rd as u32, res);
-      }
+        if sp == 0b0 {
+            let res = self.current_pc.wrapping_add(word8 as u32);
+            self.set_reg(rd as u32, res);
+        }
 
-      if sp == 0b1 {
-        let res = self.sp.wrapping_add(word8 as u32);
-        self.set_reg(rd as u32, res);
-      }
+        if sp == 0b1 {
+            let res = self.sp.wrapping_add(word8 as u32);
+            self.set_reg(rd as u32, res);
+        }
     }
-    
+
     fn add_offset_to_stack_pointer(&mut self, instruction: u16) {
-      panic!("Add_offset_to_stack_pointer unimplemented yet.");
+        panic!("Add_offset_to_stack_pointer unimplemented yet.");
     }
-    
-    fn push_pop_registers(&mut self, instruction: u16) {
-      panic!("Push_Pop_registers unimplemented yet.");
-    }
-    
-    fn multiply_load_store(&mut self, instruction: u16) {
-      panic!("Multiply_load_store unimplemented yet.");
-    }
-    
-    fn conditional_branch(&mut self, instruction: u16) {
-      panic!("Conditional_branch unimplemented yet.");
-    }
-    
-    fn software_interrupt(&mut self, instruction: u16) {
-      panic!("Software_Interrupt unimplemented yet.");
-    }
-    
-    fn unconditional_branch(&mut self, instruction: u16) {
-      let offset11 = instruction & 0x7ff;
-      self.pc = ((offset11 as i32) << 1) as u32;
 
-      println!("Unimplement probably");
+    fn push_pop_registers(&mut self, instruction: u16) {
+        panic!("Push_Pop_registers unimplemented yet.");
     }
-    
+
+    fn multiply_load_store(&mut self, instruction: u16) {
+        panic!("Multiply_load_store unimplemented yet.");
+    }
+
+    fn conditional_branch(&mut self, instruction: u16) {
+        panic!("Conditional_branch unimplemented yet.");
+    }
+
+    fn software_interrupt(&mut self, instruction: u16) {
+        panic!("Software_Interrupt unimplemented yet.");
+    }
+
+    fn unconditional_branch(&mut self, instruction: u16) {
+        let offset11 = instruction & 0x7ff;
+        self.pc = ((offset11 as i32) << 1) as u32;
+
+        println!("Unimplement probably");
+    }
+
     fn long_branch_with_link(&mut self, instruction: u16) {
-      panic!("Long_branch_with_link unimplemented yet.");
+        panic!("Long_branch_with_link unimplemented yet.");
     }
 
     fn detect_arm_instruction_format(&self, instruction: u32) -> ArmInstructionFormat {
-      if instruction >> 24 & 0xf == 0b1111 {
-        return ArmInstructionFormat::SoftwareInterupt;
-      }
+        if instruction >> 24 & 0xf == 0b1111 {
+            return ArmInstructionFormat::SoftwareInterupt;
+        }
 
-      if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b1 {
-        return ArmInstructionFormat::CopRegisterTransfer;
-      }
+        if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b1 {
+            return ArmInstructionFormat::CopRegisterTransfer;
+        }
 
-      if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b0 {
-        return ArmInstructionFormat::CopDataOperation;
-      }
+        if instruction >> 24 & 0xf == 0b1110 && instruction >> 4 & 0b1 == 0b0 {
+            return ArmInstructionFormat::CopDataOperation;
+        }
 
-      if instruction >> 25 & 0b111 == 0b110 {
-        return ArmInstructionFormat::CopDataTransfer;
-      }
+        if instruction >> 25 & 0b111 == 0b110 {
+            return ArmInstructionFormat::CopDataTransfer;
+        }
 
-      if instruction >> 25 & 0b111 == 0b101 {
-        return ArmInstructionFormat::Branch;
-      }
+        if instruction >> 25 & 0b111 == 0b101 {
+            return ArmInstructionFormat::Branch;
+        }
 
-      if instruction >> 25 & 0b111 == 0b100 {
-        return ArmInstructionFormat::BDTransfer;
-      }
+        if instruction >> 25 & 0b111 == 0b100 {
+            return ArmInstructionFormat::BDTransfer;
+        }
 
-      if instruction >> 25 & 0b111 == 0b011  && instruction >> 4 & 0b1 == 0b1 {
-        return ArmInstructionFormat::Undefined;
-      }
+        if instruction >> 25 & 0b111 == 0b011 && instruction >> 4 & 0b1 == 0b1 {
+            return ArmInstructionFormat::Undefined;
+        }
 
-      if instruction >> 26 & 0b11 == 0b01 {
-        return ArmInstructionFormat::SDTransfer;
-      }
+        if instruction >> 26 & 0b11 == 0b01 {
+            return ArmInstructionFormat::SDTransfer;
+        }
 
-      if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b1 && instruction >> 7 & 0b1 == 0b1 && instruction >> 4 & 0b1 == 0b1 {
-        return ArmInstructionFormat::HDTImm;
-      }
+        if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b1
+            && instruction >> 7 & 0b1 == 0b1 && instruction >> 4 & 0b1 == 0b1
+        {
+            return ArmInstructionFormat::HDTImm;
+        }
 
-      if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b0 && instruction >> 7 & 0x1f == 0b00001 && instruction >> 4 & 0b1 == 0b1 {
-        return ArmInstructionFormat::HDTRegister;
-      }
+        if instruction >> 25 & 0b111 == 0b000 && instruction >> 22 & 0b1 == 0b0
+            && instruction >> 7 & 0x1f == 0b00001 && instruction >> 4 & 0b1 == 0b1
+        {
+            return ArmInstructionFormat::HDTRegister;
+        }
 
-      if instruction >> 4 & 0b111111111111111111111111 == 0b000100101111111111110001 {
-        return ArmInstructionFormat::BranchAndExchange;
-      }
+        if instruction >> 4 & 0b111111111111111111111111 == 0b000100101111111111110001 {
+            return ArmInstructionFormat::BranchAndExchange;
+        }
 
-      if instruction >> 23 & 0x1f == 0b00010 && instruction >> 20 & 0b11 == 0b00 && instruction >> 4 & 0xff == 0b00001001 {
-        return ArmInstructionFormat::SDSwap;
-      }
+        if instruction >> 23 & 0x1f == 0b00010 && instruction >> 20 & 0b11 == 0b00
+            && instruction >> 4 & 0xff == 0b00001001
+        {
+            return ArmInstructionFormat::SDSwap;
+        }
 
-      if instruction >> 23 & 0x1f == 0b00001 && instruction >> 4 & 0xf == 0b1001 {
-        return ArmInstructionFormat::MultiplyLong;
-      }
+        if instruction >> 23 & 0x1f == 0b00001 && instruction >> 4 & 0xf == 0b1001 {
+            return ArmInstructionFormat::MultiplyLong;
+        }
 
-      if instruction >> 22 & 0x3f == 0b000000 && instruction >> 4 & 0xf == 0b1001 {
-        return ArmInstructionFormat::Multiply;
-      }
+        if instruction >> 22 & 0x3f == 0b000000 && instruction >> 4 & 0xf == 0b1001 {
+            return ArmInstructionFormat::Multiply;
+        }
 
-      if instruction >> 26 & 0b11 == 0b00 {
-        return ArmInstructionFormat::DataProcessing;
-      }
+        if instruction >> 26 & 0b11 == 0b00 {
+            return ArmInstructionFormat::DataProcessing;
+        }
 
-      return unreachable!();
+        return unreachable!();
     }
 
     fn data_processing(&mut self, instruction: u32) {
-      let opcode = (instruction >> 25) & 0b1111;
+        let opcode = (instruction >> 25) & 0b1111;
 
         let i = instruction >> 26 & 0b1;
         let s = instruction >> 21 & 0b1;
@@ -656,8 +679,8 @@ impl Cpu {
             1 => self.get_operand2_rotate(rotate, imm),
             _ => panic!("Unexpected operand"),
         };
-      
-      match opcode {
+
+        match opcode {
             0b0000 => self.op_and(rd, rn, operand2),
             0b0001 => self.op_eor(rd, rn, operand2),
             0b0010 => self.op_sub(rd, rn, operand2),
@@ -679,87 +702,83 @@ impl Cpu {
     }
 
     fn multiply(&mut self, instruction: u32) {
-      panic!("multiply unimplemented yet.");
+        panic!("multiply unimplemented yet.");
     }
 
     fn multiply_long(&mut self, instruction: u32) {
-      panic!("multiply_long unimplemented yet.");
+        panic!("multiply_long unimplemented yet.");
     }
 
     fn single_data_swap(&mut self, instruction: u32) {
-      panic!("single_data_swap unimplemented yet.");
+        panic!("single_data_swap unimplemented yet.");
     }
 
     //TODO: Probably incomplete.
     fn branch_and_exchange(&mut self, instruction: u32) {
-      let rn = instruction & 0xf;
-      self.pc = self.get_reg(rn);
-      if instruction & 0b1 == 0 {
-        self.cpsr.t = false;
-      } else {
-        self.cpsr.t = true;
-      }
+        let rn = instruction & 0xf;
+        self.pc = self.get_reg(rn);
+        if instruction & 0b1 == 0 {
+            self.cpsr.t = false;
+        } else {
+            self.cpsr.t = true;
+        }
     }
 
     fn halfword_data_transfer_register(&mut self, instruction: u32) {
-      panic!("halfword_data_transfer_register unimplemented yet.");
+        panic!("halfword_data_transfer_register unimplemented yet.");
     }
 
     fn halfword_data_transfer_imm(&mut self, instruction: u32) {
-      panic!("halfword_data_transfer_imm unimplemented yet.");
+        panic!("halfword_data_transfer_imm unimplemented yet.");
     }
 
     fn single_data_transfer(&mut self, instruction: u32) {
-      panic!("single_data_transfer unimplemented yet.");
+        panic!("single_data_transfer unimplemented yet.");
     }
 
     fn undefined(&mut self, instruction: u32) {
-      panic!("undefined unimplemented yet.");
+        panic!("undefined unimplemented yet.");
     }
 
     fn block_data_transfer(&mut self, instruction: u32) {
-      let rlist = instruction & 0b111111111111111;
-      let rn = instruction >> 16 & 0xf;
-      let l = instruction >> 20 & 0b1;
-      let w = instruction >> 21 & 0b1;
-      let s = instruction >> 22 & 0b1;
-      let u = instruction >> 23 & 0b1;
-      let p = instruction >> 24 & 0b1;
+        let rlist = instruction & 0b111111111111111;
+        let rn = instruction >> 16 & 0xf;
+        let l = instruction >> 20 & 0b1;
+        let w = instruction >> 21 & 0b1;
+        let s = instruction >> 22 & 0b1;
+        let u = instruction >> 23 & 0b1;
+        let p = instruction >> 24 & 0b1;
 
-
-
-
-      panic!("block_data_transfer unimplemented yet.");
+        panic!("block_data_transfer unimplemented yet.");
     }
 
     fn branch(&mut self, instruction: u32) {
-      let l = instruction >> 24 & 0b1;
-      let offset = instruction & 0b11111111111111111111111;
+        let l = instruction >> 24 & 0b1;
+        let offset = instruction & 0b11111111111111111111111;
 
-      if l == 0b0 {
-        self.pc = ((offset << 2) as i32) as u32;
-      } else if l == 0b1 {
-        self.lr = self.pc;
-      } else {
-        unreachable!();
-      }
-
+        if l == 0b0 {
+            self.pc = ((offset << 2) as i32) as u32;
+        } else if l == 0b1 {
+            self.lr = self.pc;
+        } else {
+            unreachable!();
+        }
     }
 
     fn coprocessor_data_transfer(&mut self, instruction: u32) {
-      panic!("coprocessor_data_transfer unimplemented yet.");
+        panic!("coprocessor_data_transfer unimplemented yet.");
     }
 
     fn coprocessor_data_operation(&mut self, instruction: u32) {
-      panic!("coprocessor_data_operation unimplemented yet.");
+        panic!("coprocessor_data_operation unimplemented yet.");
     }
 
     fn coprocessor_register_transfer(&mut self, instruction: u32) {
-      panic!("coprocessor_register_transfer unimplemented yet.");
+        panic!("coprocessor_register_transfer unimplemented yet.");
     }
 
     fn software_interupt(&mut self, instruction: u32) {
-      panic!("software_interupt unimplemented yet.");
+        panic!("software_interupt unimplemented yet.");
     }
 
     fn decode32(&mut self, instruction: u32) {
@@ -768,7 +787,7 @@ impl Cpu {
         println!("Instruction: {:032b} \t {:#x}", instruction, instruction);
 
         if !self.get_condition_field_result(condition) {
-          return;
+            return;
         }
 
         let format = self.detect_arm_instruction_format(instruction);
@@ -787,7 +806,9 @@ impl Cpu {
             ArmInstructionFormat::Branch => self.branch(instruction),
             ArmInstructionFormat::CopDataTransfer => self.coprocessor_data_transfer(instruction),
             ArmInstructionFormat::CopDataOperation => self.coprocessor_data_operation(instruction),
-            ArmInstructionFormat::CopRegisterTransfer => self.coprocessor_register_transfer(instruction),
+            ArmInstructionFormat::CopRegisterTransfer => {
+                self.coprocessor_register_transfer(instruction)
+            }
             ArmInstructionFormat::SoftwareInterupt => self.software_interupt(instruction),
         }
     }
@@ -800,17 +821,29 @@ impl Cpu {
         match format {
             ThumbInstructionFormat::MoveShiftedRegister => self.move_shifted_register(instruction),
             ThumbInstructionFormat::AddSubstract => self.add_substract(instruction),
-            ThumbInstructionFormat::MoveCompareAddSubstractImm => self.move_compare_add_substract_imm(instruction),
+            ThumbInstructionFormat::MoveCompareAddSubstractImm => {
+                self.move_compare_add_substract_imm(instruction)
+            }
             ThumbInstructionFormat::AluOperations => self.alu_operations(instruction),
-            ThumbInstructionFormat::HIRegisterOperationsBranchExchange => self.hi_register_operations_branch_exchange(instruction),
+            ThumbInstructionFormat::HIRegisterOperationsBranchExchange => {
+                self.hi_register_operations_branch_exchange(instruction)
+            }
             ThumbInstructionFormat::PCRelativeLoad => self.pc_relative_load(instruction),
-            ThumbInstructionFormat::LoadStoreWithRegisterOffset => self.load_store_with_register_offset(instruction),
-            ThumbInstructionFormat::LoadStoreSignExtendedByteHalfword => self.load_store_sign_extended_byte_halfword(instruction),
-            ThumbInstructionFormat::LoadStoreWithImmOffset => self.load_store_with_imm_offset(instruction),
+            ThumbInstructionFormat::LoadStoreWithRegisterOffset => {
+                self.load_store_with_register_offset(instruction)
+            }
+            ThumbInstructionFormat::LoadStoreSignExtendedByteHalfword => {
+                self.load_store_sign_extended_byte_halfword(instruction)
+            }
+            ThumbInstructionFormat::LoadStoreWithImmOffset => {
+                self.load_store_with_imm_offset(instruction)
+            }
             ThumbInstructionFormat::LoadStoreHalfword => self.load_store_halfword(instruction),
             ThumbInstructionFormat::SPRelativeLoadStore => self.sp_relative_load_store(instruction),
             ThumbInstructionFormat::LoadAddress => self.load_address(instruction),
-            ThumbInstructionFormat::AddOffsetToStackPointer => self.add_offset_to_stack_pointer(instruction),
+            ThumbInstructionFormat::AddOffsetToStackPointer => {
+                self.add_offset_to_stack_pointer(instruction)
+            }
             ThumbInstructionFormat::PushPopRegisters => self.push_pop_registers(instruction),
             ThumbInstructionFormat::MultiplyLoadStore => self.multiply_load_store(instruction),
             ThumbInstructionFormat::ConditionalBranch => self.conditional_branch(instruction),
@@ -953,7 +986,10 @@ impl Cpu {
 
             let nn = instruction & 0x7ff;
 
-            self.pc = self.current_pc.wrapping_add(4).wrapping_sub(0x400000).wrapping_add(0x3FFFFF);
+            self.pc = self.current_pc
+                .wrapping_add(4)
+                .wrapping_sub(0x400000)
+                .wrapping_add(0x3FFFFF);
 
             return;
         }
@@ -1012,7 +1048,9 @@ impl Cpu {
     fn op_sbc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = rn.wrapping_sub(operand2).wrapping_add(self.cpsr.c as u32).wrapping_sub(1);
+        let res = rn.wrapping_sub(operand2)
+            .wrapping_add(self.cpsr.c as u32)
+            .wrapping_sub(1);
 
         self.set_reg(rd, res);
     }
@@ -1020,7 +1058,10 @@ impl Cpu {
     fn op_rsc(&mut self, rd: u32, rn: u32, operand2: u32) {
         let rn = self.get_reg(rn);
 
-        let res = operand2.wrapping_sub(rn).wrapping_add(self.cpsr.c as u32).wrapping_sub(1);
+        let res = operand2
+            .wrapping_sub(rn)
+            .wrapping_add(self.cpsr.c as u32)
+            .wrapping_sub(1);
 
         self.set_reg(rd, res);
     }
@@ -1077,41 +1118,41 @@ impl Cpu {
 }
 
 enum ArmInstructionFormat {
-  DataProcessing,
-  Multiply,
-  MultiplyLong,
-  SDSwap,
-  BranchAndExchange,
-  HDTRegister,
-  HDTImm,
-  SDTransfer,
-  Undefined,
-  BDTransfer,
-  Branch,
-  CopDataTransfer,
-  CopDataOperation,
-  CopRegisterTransfer,
-  SoftwareInterupt,
+    DataProcessing,
+    Multiply,
+    MultiplyLong,
+    SDSwap,
+    BranchAndExchange,
+    HDTRegister,
+    HDTImm,
+    SDTransfer,
+    Undefined,
+    BDTransfer,
+    Branch,
+    CopDataTransfer,
+    CopDataOperation,
+    CopRegisterTransfer,
+    SoftwareInterupt,
 }
 
 enum ThumbInstructionFormat {
-  MoveShiftedRegister,
-  AddSubstract,
-  MoveCompareAddSubstractImm,
-  AluOperations,
-  HIRegisterOperationsBranchExchange,
-  PCRelativeLoad,
-  LoadStoreWithRegisterOffset,
-  LoadStoreSignExtendedByteHalfword,
-  LoadStoreWithImmOffset,
-  LoadStoreHalfword,
-  SPRelativeLoadStore,
-  LoadAddress,
-  AddOffsetToStackPointer,
-  PushPopRegisters,
-  MultiplyLoadStore,
-  ConditionalBranch,
-  SoftwareInterrupt,
-  UnconditionalBranch,
-  LongBranchWithLink,
+    MoveShiftedRegister,
+    AddSubstract,
+    MoveCompareAddSubstractImm,
+    AluOperations,
+    HIRegisterOperationsBranchExchange,
+    PCRelativeLoad,
+    LoadStoreWithRegisterOffset,
+    LoadStoreSignExtendedByteHalfword,
+    LoadStoreWithImmOffset,
+    LoadStoreHalfword,
+    SPRelativeLoadStore,
+    LoadAddress,
+    AddOffsetToStackPointer,
+    PushPopRegisters,
+    MultiplyLoadStore,
+    ConditionalBranch,
+    SoftwareInterrupt,
+    UnconditionalBranch,
+    LongBranchWithLink,
 }
