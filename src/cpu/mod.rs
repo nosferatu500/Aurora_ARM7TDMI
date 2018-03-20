@@ -1,8 +1,10 @@
 mod arm;
+mod arm_instruction;
 
 use interconnect::Interconnect;
 
 use self::arm::*;
+use self::arm_instruction::*;
 
 pub struct Cpu {
     pc: u32, // r15 // program counter
@@ -21,6 +23,8 @@ pub struct Cpu {
     execution_mode: ExecutionMode,
 
     instruction_width: WordSize,
+
+    condition: ArmCondition,
 
     sp: u32, // r13 // stack pointer
     lr: u32, // r14 // link register
@@ -73,6 +77,8 @@ impl Cpu {
             shifter_operand: 0,
 
             shifter_carry_out: 0,
+
+            condition: ArmCondition::AL,
 
             execution_mode: ExecutionMode::Thumb,
 
@@ -234,25 +240,25 @@ impl Cpu {
         imm.rotate_right(rotate * 2)
     }
 
-    fn get_condition_field_result(&self, condition: u32) -> bool {
+    fn get_condition_field_result(&self, condition: ArmCondition) -> bool {
         match condition {
-            0b0000 => return self.cpsr.z,
-            0b0001 => return !self.cpsr.z,
-            0b0010 => return self.cpsr.c,
-            0b0011 => return !self.cpsr.c,
-            0b0100 => return self.cpsr.n,
-            0b0101 => return !self.cpsr.n,
-            0b0110 => return self.cpsr.v,
-            0b0111 => return !self.cpsr.v,
-            0b1000 => return self.cpsr.c && !self.cpsr.z,
-            0b1001 => return !self.cpsr.c && self.cpsr.z,
-            0b1010 => return self.cpsr.n == self.cpsr.v,
-            0b1011 => return self.cpsr.n != self.cpsr.v,
-            0b1100 => return !self.cpsr.z && self.cpsr.n == self.cpsr.v,
-            0b1101 => return self.cpsr.z && self.cpsr.n != self.cpsr.v,
-            0b1110 => return true,
-            0b1111 => unreachable!(),
-            _ => panic!("\n\nUnknown condition {:04b}\n\n", condition),
+            ArmCondition::EQ => return self.cpsr.z,
+            ArmCondition::NE => return !self.cpsr.z,
+            ArmCondition::HS => return self.cpsr.c,
+            ArmCondition::LO => return !self.cpsr.c,
+            ArmCondition::MI => return self.cpsr.n,
+            ArmCondition::PL => return !self.cpsr.n,
+            ArmCondition::VS => return self.cpsr.v,
+            ArmCondition::VC => return !self.cpsr.v,
+            ArmCondition::HI => return self.cpsr.c && !self.cpsr.z,
+            ArmCondition::LS => return !self.cpsr.c && self.cpsr.z,
+            ArmCondition::GE => return self.cpsr.n == self.cpsr.v,
+            ArmCondition::LT => return self.cpsr.n != self.cpsr.v,
+            ArmCondition::GT => return !self.cpsr.z && self.cpsr.n == self.cpsr.v,
+            ArmCondition::LE => return self.cpsr.z && self.cpsr.n != self.cpsr.v,
+            ArmCondition::AL => return true,
+            ArmCondition::NV => unreachable!(),
+            _ => unreachable!(),
         }
     }
 
@@ -757,7 +763,7 @@ impl Cpu {
         let offset = instruction & 0b11111111111111111111111;
 
         if l == 0b0 {
-            self.pc = ((offset << 2) as i32) as u32;
+            self.pc = self.current_pc.wrapping_add(((offset << 2) as i32) as u32);
         } else if l == 0b1 {
             self.lr = self.pc;
         } else {
@@ -782,9 +788,9 @@ impl Cpu {
     }
 
     fn decode32(&mut self, instruction: u32) {
-        let condition = instruction >> 28;
-
         println!("Instruction: {:032b} \t {:#x}", instruction, instruction);
+
+        let condition = self.condition.find(instruction >> 28);
 
         if !self.get_condition_field_result(condition) {
             return;
